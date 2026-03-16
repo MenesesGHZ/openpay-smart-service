@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+package openpay.v1;
+
+option go_package = "github.com/your-org/openpay-smart-service/gen/openpay/v1;openpayv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "google/api/annotations.proto";
+import "openpay/v1/common.proto";
+
+// ─── Service ─────────────────────────────────────────────────────────────────
+
+service PaymentService {
+  rpc GetPaymentStatus    (GetPaymentStatusRequest)    returns (GetPaymentStatusResponse) {
+    option (google.api.http) = { get: "/v1/payments/{payment_id}" };
+  }
+  rpc ListPayments        (ListPaymentsRequest)        returns (ListPaymentsResponse) {
+    option (google.api.http) = { get: "/v1/payments" };
+  }
+  rpc ListTenantPayments  (ListTenantPaymentsRequest)  returns (ListTenantPaymentsResponse) {
+    option (google.api.http) = { get: "/v1/tenant/payments" };
+  }
+  rpc RefundPayment       (RefundPaymentRequest)       returns (RefundPaymentResponse) {
+    option (google.api.http) = { post: "/v1/payments/{payment_id}/refund" body: "*" };
+  }
+
+  // Server-side streaming: pushes PaymentEvent messages as state changes occur.
+  rpc StreamPaymentEvents (StreamPaymentEventsRequest) returns (stream PaymentEvent);
+}
+
+// ─── Domain objects ──────────────────────────────────────────────────────────
+
+// Payment represents a completed or in-flight charge.
+//
+// Fee fields (gross_amount, openpay_fee, platform_fee, net_amount) are all
+// expressed as Money (minor units / centavos). They are populated once the
+// charge.succeeded webhook is processed; they are zero for pending payments.
+//
+// Example for a $500.00 MXN card charge at 1.5% platform fee:
+//   gross_amount  = $500.00  (what the member paid)
+//   openpay_fee   =  $17.00  (2.9% + $2.50 — from charge.fee_details)
+//   platform_fee  =   $7.50  (1.5% of gross)
+//   net_amount    = $475.50  (credited to the tenant balance)
+message Payment {
+  string                    id                     = 1;
+  string                    tenant_id              = 2;
+  string                    member_id              = 3;
+  string                    link_id                = 4;  // empty if not from a payment link
+  string                    openpay_transaction_id = 5;
+  string                    order_id               = 6;
+  string                    idempotency_key        = 7;
+
+  // Fee breakdown — populated at charge.succeeded; zero until then.
+  Money                     gross_amount           = 8;  // total charged to member
+  Money                     openpay_fee            = 9;  // OpenPay's cut (from charge.fee_details)
+  Money                     platform_fee           = 10; // service-owner cut (gross × platform_fee_bps)
+  Money                     net_amount             = 11; // tenant earns: gross − openpay_fee − platform_fee
+
+  PaymentMethod             method                 = 12;
+  PaymentStatus             status                 = 13;
+  string                    description            = 14;
+  string                    error_message          = 15;
+  string                    error_code             = 16; // OpenPay numeric error code, e.g. "3001"
+  BankPaymentDetails        bank_details           = 17; // populated for SPEI charges
+  google.protobuf.Struct    metadata               = 18;
+  google.protobuf.Timestamp created_at             = 19;
+  google.protobuf.Timestamp updated_at             = 20;
+}
+
+// BankPaymentDetails contains the SPEI info shown to the member to complete payment.
+message BankPaymentDetails {
+  string clabe     = 1;
+  string bank_name = 2;
+  string reference = 3;
+  string agreement = 4; // Bancomer CIE agreement number
+}
+
+message PaymentEvent {
+  string                    event_id    = 1;
+  string                    payment_id  = 2;
+  string                    tenant_id   = 3;
+  string                    member_id   = 4;
+  PaymentStatus             status      = 5;
+  string                    event_type  = 6; // mirrors OpenPay event type, e.g. "charge.succeeded"
+  google.protobuf.Timestamp occurred_at = 7;
+}
+
+// ─── PaymentFilter ───────────────────────────────────────────────────────────
+
+message PaymentFilter {
+  string                    member_id   = 1;
+  repeated PaymentStatus    status      = 2;
+  repeated PaymentMethod    method      = 3;
+  Currency                  currency    = 4;
+  int64                     amount_min  = 5; // minor units (centavos)
+  int64                     amount_max  = 6;
+  string                    order_id    = 7;
+  google.protobuf.Timestamp from        = 8;
+  google.protobuf.Timestamp to          = 9;
+}
+
+// ─── GetPaymentStatus ────────────────────────────────────────────────────────
+
+message GetPaymentStatusRequest {
+  string payment_id = 1; // internal ID or openpay_transaction_id prefixed with "op:"
+}
+
+message GetPaymentStatusResponse {
+  Payment payment = 1;
+}
+
+// ─── ListPayments ────────────────────────────────────────────────────────────
+
+message ListPaymentsRequest {
+  int32         page_size  = 1;
+  string        page_token = 2;
+  PaymentFilter filter     = 3;
+}
+
+message ListPaymentsResponse {
+  repeated Payment payments  = 1;
+  PageInfo         page_info = 2;
+}
+
+// ─── ListTenantPayments ──────────────────────────────────────────────────────
+
+message ListTenantPaymentsRequest {
+  int32         page_size  = 1;
+  string        page_token = 2;
+  PaymentFilter filter     = 3; // member_id ignored here — tenant-wide
+}
+
+message ListTenantPaymentsResponse {
+  repeated Payment payments  = 1;
+  PageInfo         page_info = 2;
+}
+
+// ─── RefundPayment ───────────────────────────────────────────────────────────
+
+message RefundPaymentRequest {
+  string payment_id   = 1;
+  int64  amount       = 2; // minor units; 0 = full refund
+  string description  = 3;
+}
+
+message RefundPaymentResponse {
+  Payment refund_payment = 1;
+}
+
+// ─── StreamPaymentEvents ─────────────────────────────────────────────────────
+
+message StreamPaymentEventsRequest {
+  string member_id = 1; // optional; empty = all tenant events
+}

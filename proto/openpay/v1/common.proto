@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package openpay.v1;
+
+option go_package = "github.com/your-org/openpay-smart-service/gen/openpay/v1;openpayv1";
+
+import "google/protobuf/timestamp.proto";
+
+// ─── Enumerations ────────────────────────────────────────────────────────────
+
+enum Currency {
+  CURRENCY_UNSPECIFIED = 0;
+  CURRENCY_MXN = 1;
+  CURRENCY_USD = 2;
+}
+
+enum PaymentMethod {
+  PAYMENT_METHOD_UNSPECIFIED = 0;
+  PAYMENT_METHOD_CARD        = 1;
+  PAYMENT_METHOD_BANK_ACCOUNT = 2; // SPEI
+  PAYMENT_METHOD_STORE       = 3;  // OXXO / convenience store
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_PENDING     = 1;
+  PAYMENT_STATUS_IN_PROGRESS = 2;
+  PAYMENT_STATUS_COMPLETED   = 3;
+  PAYMENT_STATUS_FAILED      = 4;
+  PAYMENT_STATUS_CANCELLED   = 5;
+  PAYMENT_STATUS_REFUNDED    = 6;
+  PAYMENT_STATUS_CHARGEBACK  = 7;
+}
+
+enum PayoutStatus {
+  PAYOUT_STATUS_UNSPECIFIED = 0;
+  PAYOUT_STATUS_PENDING     = 1;
+  PAYOUT_STATUS_IN_PROGRESS = 2;
+  PAYOUT_STATUS_COMPLETED   = 3;
+  PAYOUT_STATUS_FAILED      = 4;
+}
+
+enum DisbursementFrequency {
+  DISBURSEMENT_FREQUENCY_UNSPECIFIED = 0;
+  DISBURSEMENT_FREQUENCY_DAILY       = 1;
+  DISBURSEMENT_FREQUENCY_WEEKLY      = 2;
+  DISBURSEMENT_FREQUENCY_MONTHLY     = 3;
+  DISBURSEMENT_FREQUENCY_CUSTOM      = 4; // use cron_expr field
+}
+
+enum KYCStatus {
+  KYC_STATUS_UNSPECIFIED = 0;
+  KYC_STATUS_PENDING     = 1;
+  KYC_STATUS_VERIFIED    = 2;
+  KYC_STATUS_REJECTED    = 3;
+}
+
+enum PaymentLinkStatus {
+  PAYMENT_LINK_STATUS_UNSPECIFIED = 0;
+  PAYMENT_LINK_STATUS_ACTIVE      = 1;
+  PAYMENT_LINK_STATUS_REDEEMED    = 2;
+  PAYMENT_LINK_STATUS_EXPIRED     = 3;
+  PAYMENT_LINK_STATUS_CANCELLED   = 4;
+}
+
+// ─── Shared messages ─────────────────────────────────────────────────────────
+
+// Money represents an amount in a specific currency (always in minor units, e.g. centavos).
+message Money {
+  int64    amount   = 1; // e.g. 10050 = MXN $100.50
+  Currency currency = 2;
+}
+
+// PageInfo is returned on every List response.
+message PageInfo {
+  string next_page_token  = 1; // empty if last page
+  int32  total_count      = 2; // approximate total
+}
+
+// Address is optional on member profiles.
+message Address {
+  string line1       = 1;
+  string line2       = 2;
+  string city        = 3;
+  string state       = 4;
+  string postal_code = 5;
+  string country     = 6; // ISO 3166-1 alpha-2
+}

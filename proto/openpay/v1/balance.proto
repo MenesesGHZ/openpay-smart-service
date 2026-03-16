@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package openpay.v1;
+
+option go_package = "github.com/your-org/openpay-smart-service/gen/openpay/v1;openpayv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+import "openpay/v1/common.proto";
+
+// ─── Service ─────────────────────────────────────────────────────────────────
+
+service BalanceService {
+  rpc GetTenantBalance  (GetTenantBalanceRequest)  returns (GetTenantBalanceResponse) {
+    option (google.api.http) = { get: "/v1/tenant/balance" };
+  }
+  rpc GetMemberBalance  (GetMemberBalanceRequest)  returns (GetMemberBalanceResponse) {
+    option (google.api.http) = { get: "/v1/members/{member_id}/balance" };
+  }
+  rpc ListBalances      (ListBalancesRequest)      returns (ListBalancesResponse) {
+    option (google.api.http) = { get: "/v1/tenant/balances" };
+  }
+  rpc GetBalanceHistory (GetBalanceHistoryRequest) returns (GetBalanceHistoryResponse) {
+    option (google.api.http) = { get: "/v1/members/{member_id}/balance/history" };
+  }
+}
+
+// ─── Domain objects ──────────────────────────────────────────────────────────
+
+message Balance {
+  string                    id          = 1;
+  string                    tenant_id   = 2;
+  string                    member_id   = 3; // empty = tenant-level balance
+  Money                     available   = 4; // completed charges – disbursed payouts
+  Money                     pending     = 5; // in-progress charges not yet settled
+  google.protobuf.Timestamp updated_at  = 6;
+}
+
+enum BalanceHistoryGranularity {
+  BALANCE_HISTORY_GRANULARITY_UNSPECIFIED = 0;
+  BALANCE_HISTORY_GRANULARITY_HOUR        = 1;
+  BALANCE_HISTORY_GRANULARITY_DAY         = 2;
+  BALANCE_HISTORY_GRANULARITY_WEEK        = 3;
+}
+
+message BalanceSnapshot {
+  google.protobuf.Timestamp at        = 1;
+  Money                     available = 2;
+  Money                     pending   = 3;
+}
+
+// ─── GetTenantBalance ────────────────────────────────────────────────────────
+
+message GetTenantBalanceRequest {
+  Currency currency = 1; // defaults to MXN
+}
+
+message GetTenantBalanceResponse {
+  Balance balance = 1;
+}
+
+// ─── GetMemberBalance ────────────────────────────────────────────────────────
+
+message GetMemberBalanceRequest {
+  string   member_id = 1;
+  Currency currency  = 2;
+}
+
+message GetMemberBalanceResponse {
+  Balance balance = 1;
+}
+
+// ─── ListBalances ────────────────────────────────────────────────────────────
+
+message ListBalancesRequest {
+  int32    page_size  = 1;
+  string   page_token = 2;
+  Currency currency   = 3;
+}
+
+message ListBalancesResponse {
+  repeated Balance balances  = 1;
+  PageInfo         page_info = 2;
+}
+
+// ─── GetBalanceHistory ───────────────────────────────────────────────────────
+
+message GetBalanceHistoryRequest {
+  string                        member_id   = 1;
+  BalanceHistoryGranularity     granularity = 2;
+  google.protobuf.Timestamp     from        = 3;
+  google.protobuf.Timestamp     to          = 4;
+  Currency                      currency    = 5;
+}
+
+message GetBalanceHistoryResponse {
+  repeated BalanceSnapshot snapshots = 1;
+}

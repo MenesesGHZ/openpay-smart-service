@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package openpay.v1;
+
+option go_package = "github.com/your-org/openpay-smart-service/gen/openpay/v1;openpayv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+import "openpay/v1/common.proto";
+
+// ─── Service ─────────────────────────────────────────────────────────────────
+//
+// Architecture note:
+//   The service operator holds ONE OpenPay merchant account (configured in
+//   server config, not per-tenant). Customer payments accumulate in that
+//   merchant balance. This service tracks attribution per tenant in its own DB,
+//   and the DisbursementScheduler calls POST /v1/{merchantId}/payouts to SPEI-
+//   transfer each tenant's earned balance to their registered bank account (CLABE).
+//
+//   Tenants do NOT have their own OpenPay accounts. They register a destination
+//   bank account (CLABE) here so we know where to send their money.
+
+service TenantService {
+  // Bank account — where the tenant receives their disbursements via SPEI.
+  // Must be set up before any payout can be scheduled.
+  rpc SetupBankAccount  (SetupBankAccountRequest)  returns (SetupBankAccountResponse) {
+    option (google.api.http) = { post: "/v1/tenant/bank-account" body: "*" };
+  }
+  rpc GetBankAccount    (GetBankAccountRequest)    returns (GetBankAccountResponse) {
+    option (google.api.http) = { get: "/v1/tenant/bank-account" };
+  }
+  rpc DeleteBankAccount (DeleteBankAccountRequest) returns (DeleteBankAccountResponse) {
+    option (google.api.http) = { delete: "/v1/tenant/bank-account" };
+  }
+
+  // Disbursement schedule — controls how often the scheduler fires payouts.
+  rpc SetDisbursementFrequency  (SetDisbursementFrequencyRequest)  returns (SetDisbursementFrequencyResponse) {
+    option (google.api.http) = { put: "/v1/tenant/disbursement/schedule" body: "*" };
+  }
+  rpc GetDisbursementSchedule   (GetDisbursementScheduleRequest)   returns (GetDisbursementScheduleResponse) {
+    option (google.api.http) = { get: "/v1/tenant/disbursement/schedule" };
+  }
+  rpc TriggerManualDisbursement (TriggerManualDisbursementRequest) returns (TriggerManualDisbursementResponse) {
+    option (google.api.http) = { post: "/v1/tenant/disbursement/trigger" body: "*" };
+  }
+}
+
+// ─── Domain objects ───────────────────────────────────────────────────────────
+
+// TenantBankAccount is the SPEI destination for this tenant's disbursements.
+// The service sends funds here via OpenPay's POST /payouts endpoint.
+message TenantBankAccount {
+  // 18-digit CLABE (Clave Bancaria Estandarizada) — uniquely identifies a Mexican bank account.
+  string clabe        = 1;
+  // Full legal name of the account holder, as it appears at the bank.
+  string holder_name  = 2;
+  // Bank name for display purposes (e.g. "BBVA", "BANAMEX", "SANTANDER").
+  string bank_name    = 3;
+  // Masked CLABE for display — only last 4 digits shown after setup.
+  string clabe_masked = 4; // e.g. "**************1234"
+  google.protobuf.Timestamp registered_at = 5;
+}
+
+message DisbursementSchedule {
+  DisbursementFrequency     frequency   = 1;
+  string                    cron_expr   = 2; // set when frequency = CUSTOM; e.g. "0 16 * * 1-5"
+  google.protobuf.Timestamp next_run_at = 3;
+  google.protobuf.Timestamp last_run_at = 4;
+  bool                      enabled     = 5;
+}
+
+// ─── SetupBankAccount ─────────────────────────────────────────────────────────
+
+message SetupBankAccountRequest {
+  // Full 18-digit CLABE. Validated via Luhn-equivalent check digit before storing.
+  string clabe        = 1;
+  string holder_name  = 2;
+  string bank_name    = 3;
+}
+
+message SetupBankAccountResponse {
+  TenantBankAccount bank_account = 1;
+}
+
+// ─── GetBankAccount ───────────────────────────────────────────────────────────
+
+message GetBankAccountRequest {}
+
+message GetBankAccountResponse {
+  // Returns the masked bank account. The full CLABE is never returned after setup.
+  TenantBankAccount bank_account = 1;
+}
+
+// ─── DeleteBankAccount ────────────────────────────────────────────────────────
+
+message DeleteBankAccountRequest {}
+
+message DeleteBankAccountResponse {
+  bool success = 1;
+}
+
+// ─── SetDisbursementFrequency ────────────────────────────────────────────────
+
+message SetDisbursementFrequencyRequest {
+  DisbursementFrequency frequency = 1;
+  // Required when frequency = CUSTOM. Minimum interval: 1 hour.
+  // Example: "0 16 * * 1-5"  → weekdays at 16:00 UTC (before SPEI cutoff)
+  string cron_expr  = 2;
+  bool   enabled    = 3;
+}
+
+message SetDisbursementFrequencyResponse {
+  DisbursementSchedule schedule = 1;
+}
+
+// ─── GetDisbursementSchedule ─────────────────────────────────────────────────
+
+message GetDisbursementScheduleRequest {}
+
+message GetDisbursementScheduleResponse {
+  DisbursementSchedule schedule = 1;
+}
+
+// ─── TriggerManualDisbursement ───────────────────────────────────────────────
+
+message TriggerManualDisbursementRequest {
+  string description = 1;
+  // If set, only disburse up to this amount (minor units).
+  // Defaults to full accumulated balance.
+  int64 amount_limit = 2;
+}
+
+message TriggerManualDisbursementResponse {
+  string        payout_id   = 1; // our internal payout ID
+  string        openpay_id  = 2; // OpenPay transaction ID
+  PayoutStatus  status      = 3;
+  Money         amount      = 4;
+}

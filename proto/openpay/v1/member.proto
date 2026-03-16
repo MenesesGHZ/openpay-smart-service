@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package openpay.v1;
+
+option go_package = "github.com/your-org/openpay-smart-service/gen/openpay/v1;openpayv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+import "openpay/v1/common.proto";
+
+// ─── Service ─────────────────────────────────────────────────────────────────
+
+service MemberService {
+  rpc CreateMember      (CreateMemberRequest)      returns (CreateMemberResponse) {
+    option (google.api.http) = { post: "/v1/members" body: "*" };
+  }
+  rpc GetMember         (GetMemberRequest)         returns (GetMemberResponse) {
+    option (google.api.http) = { get: "/v1/members/{member_id}" };
+  }
+  rpc UpdateMember      (UpdateMemberRequest)      returns (UpdateMemberResponse) {
+    option (google.api.http) = { put: "/v1/members/{member_id}" body: "*" };
+  }
+  rpc ListMembers       (ListMembersRequest)       returns (ListMembersResponse) {
+    option (google.api.http) = { get: "/v1/members" };
+  }
+
+  // Payment links
+  rpc CreatePaymentLink (CreatePaymentLinkRequest) returns (CreatePaymentLinkResponse) {
+    option (google.api.http) = { post: "/v1/members/{member_id}/payment-links" body: "*" };
+  }
+  rpc GetPaymentLink    (GetPaymentLinkRequest)    returns (GetPaymentLinkResponse) {
+    option (google.api.http) = { get: "/v1/payment-links/{token}" };
+  }
+  rpc ListPaymentLinks  (ListPaymentLinksRequest)  returns (ListPaymentLinksResponse) {
+    option (google.api.http) = { get: "/v1/members/{member_id}/payment-links" };
+  }
+  rpc ExpirePaymentLink (ExpirePaymentLinkRequest) returns (ExpirePaymentLinkResponse) {
+    option (google.api.http) = { post: "/v1/payment-links/{link_id}/expire" body: "*" };
+  }
+}
+
+// ─── Domain objects ──────────────────────────────────────────────────────────
+
+message Member {
+  string                    id                  = 1;
+  string                    tenant_id           = 2;
+  string                    openpay_customer_id = 3;
+  string                    external_id         = 4; // caller's own identifier
+  string                    name                = 5;
+  string                    email               = 6;
+  string                    phone               = 7;
+  KYCStatus                 kyc_status          = 8;
+  Address                   address             = 9;
+  google.protobuf.Timestamp created_at          = 10;
+  google.protobuf.Timestamp updated_at          = 11;
+}
+
+message PaymentLink {
+  string                    id          = 1;
+  string                    tenant_id   = 2;
+  string                    member_id   = 3;
+  string                    token       = 4; // short URL-safe token
+  Money                     amount      = 5;
+  string                    description = 6;
+  PaymentLinkStatus         status      = 7;
+  google.protobuf.Timestamp expires_at  = 8;
+  google.protobuf.Timestamp created_at  = 9;
+  google.protobuf.Timestamp redeemed_at = 10;
+}
+
+// ─── CreateMember ─────────────────────────────────────────────────────────────
+
+message CreateMemberRequest {
+  string  idempotency_key = 1; // required — prevents duplicate creation
+  string  external_id     = 2;
+  string  name            = 3;
+  string  email           = 4;
+  string  phone           = 5;
+  Address address         = 6;
+}
+
+message CreateMemberResponse {
+  Member member = 1;
+}
+
+// ─── GetMember ────────────────────────────────────────────────────────────────
+
+message GetMemberRequest {
+  string member_id = 1; // our internal ID or external_id prefixed with "ext:"
+}
+
+message GetMemberResponse {
+  Member member = 1;
+}
+
+// ─── UpdateMember ────────────────────────────────────────────────────────────
+
+message UpdateMemberRequest {
+  string  member_id = 1;
+  string  name      = 2;
+  string  email     = 3;
+  string  phone     = 4;
+  Address address   = 5;
+}
+
+message UpdateMemberResponse {
+  Member member = 1;
+}
+
+// ─── ListMembers ─────────────────────────────────────────────────────────────
+
+message ListMembersRequest {
+  int32      page_size   = 1;
+  string     page_token  = 2;
+  string     email       = 3;
+  KYCStatus  kyc_status  = 4;
+  google.protobuf.Timestamp created_after  = 5;
+  google.protobuf.Timestamp created_before = 6;
+}
+
+message ListMembersResponse {
+  repeated Member members  = 1;
+  PageInfo        page_info = 2;
+}
+
+// ─── CreatePaymentLink ───────────────────────────────────────────────────────
+
+message CreatePaymentLinkRequest {
+  string member_id        = 1;
+  Money  amount           = 2;
+  string description      = 3;
+  // If zero, link never expires. Otherwise seconds from now.
+  int64  expires_in_secs  = 4;
+  string order_id         = 5; // optional caller-supplied order reference
+}
+
+message CreatePaymentLinkResponse {
+  PaymentLink link         = 1;
+  string      checkout_url = 2; // full URL to share with the member
+}
+
+// ─── GetPaymentLink ──────────────────────────────────────────────────────────
+
+message GetPaymentLinkRequest {
+  string token = 1; // URL-safe token from the link
+}
+
+message GetPaymentLinkResponse {
+  PaymentLink link = 1;
+}
+
+// ─── ListPaymentLinks ────────────────────────────────────────────────────────
+
+message ListPaymentLinksRequest {
+  string            member_id   = 1;
+  int32             page_size   = 2;
+  string            page_token  = 3;
+  PaymentLinkStatus status      = 4;
+}
+
+message ListPaymentLinksResponse {
+  repeated PaymentLink links    = 1;
+  PageInfo             page_info = 2;
+}
+
+// ─── ExpirePaymentLink ───────────────────────────────────────────────────────
+
+message ExpirePaymentLinkRequest {
+  string link_id = 1;
+}
+
+message ExpirePaymentLinkResponse {
+  PaymentLink link = 1;
+}

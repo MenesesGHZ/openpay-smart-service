@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package openpay.v1;
+
+option go_package = "github.com/your-org/openpay-smart-service/gen/openpay/v1;openpayv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "google/api/annotations.proto";
+import "openpay/v1/common.proto";
+
+// ─── Service ─────────────────────────────────────────────────────────────────
+
+service WebhookService {
+  rpc RegisterWebhook      (RegisterWebhookRequest)      returns (RegisterWebhookResponse) {
+    option (google.api.http) = { post: "/v1/webhooks" body: "*" };
+  }
+  rpc UpdateWebhook        (UpdateWebhookRequest)        returns (UpdateWebhookResponse) {
+    option (google.api.http) = { put: "/v1/webhooks/{webhook_id}" body: "*" };
+  }
+  rpc DeleteWebhook        (DeleteWebhookRequest)        returns (DeleteWebhookResponse) {
+    option (google.api.http) = { delete: "/v1/webhooks/{webhook_id}" };
+  }
+  rpc ListWebhooks         (ListWebhooksRequest)         returns (ListWebhooksResponse) {
+    option (google.api.http) = { get: "/v1/webhooks" };
+  }
+  rpc GetWebhookDelivery   (GetWebhookDeliveryRequest)   returns (GetWebhookDeliveryResponse) {
+    option (google.api.http) = { get: "/v1/webhooks/deliveries/{delivery_id}" };
+  }
+  rpc RetryWebhookDelivery (RetryWebhookDeliveryRequest) returns (RetryWebhookDeliveryResponse) {
+    option (google.api.http) = { post: "/v1/webhooks/deliveries/{delivery_id}/retry" body: "*" };
+  }
+  rpc RotateWebhookSecret  (RotateWebhookSecretRequest)  returns (RotateWebhookSecretResponse) {
+    option (google.api.http) = { post: "/v1/webhooks/{webhook_id}/rotate-secret" body: "*" };
+  }
+}
+
+// ─── Event types (mirrors OpenPay event catalogue) ───────────────────────────
+
+// All events a subscription can listen to. Use "*" in proto as a string constant.
+// Valid values:
+//   verification
+//   charge.created, charge.succeeded, charge.failed, charge.cancelled, charge.refunded
+//   payout.created, payout.succeeded, payout.failed
+//   spei.received
+//   chargeback.created, chargeback.accepted, chargeback.rejected
+//   subscription.charge.failed  (v2)
+//   transfer.succeeded          (v2)
+
+// ─── Domain objects ──────────────────────────────────────────────────────────
+
+enum DeliveryStatus {
+  DELIVERY_STATUS_UNSPECIFIED = 0;
+  DELIVERY_STATUS_PENDING     = 1;
+  DELIVERY_STATUS_DELIVERED   = 2;
+  DELIVERY_STATUS_FAILED      = 3;
+  DELIVERY_STATUS_DLQ         = 4; // exhausted all retries
+}
+
+message RetryPolicy {
+  int32           max_attempts    = 1; // default 7
+  repeated int32  intervals_sec   = 2; // per-attempt delay in seconds
+}
+
+message WebhookSubscription {
+  string                    id         = 1;
+  string                    tenant_id  = 2;
+  string                    url        = 3;
+  repeated string           events     = 4; // event type strings
+  RetryPolicy               retry_policy = 5;
+  DeliveryStats             stats      = 6;
+  bool                      enabled    = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message DeliveryStats {
+  int64 total_delivered = 1;
+  int64 total_failed    = 2;
+  int64 total_pending   = 3;
+}
+
+message WebhookDelivery {
+  string                    id              = 1;
+  string                    subscription_id = 2;
+  string                    event_type      = 3;
+  google.protobuf.Struct    payload         = 4;
+  DeliveryStatus            status          = 5;
+  int32                     attempts        = 6;
+  int32                     response_code   = 7;
+  int64                     latency_ms      = 8;
+  string                    error_message   = 9;
+  google.protobuf.Timestamp created_at      = 10;
+  google.protobuf.Timestamp last_attempted_at = 11;
+  google.protobuf.Timestamp next_retry_at   = 12;
+}
+
+// ─── RegisterWebhook ─────────────────────────────────────────────────────────
+
+message RegisterWebhookRequest {
+  string          url          = 1;
+  repeated string events       = 2;
+  RetryPolicy     retry_policy = 3; // optional; defaults applied if omitted
+}
+
+message RegisterWebhookResponse {
+  WebhookSubscription webhook = 1;
+  // The signing secret — shown ONCE at creation; store it securely.
+  string              secret  = 2;
+}
+
+// ─── UpdateWebhook ───────────────────────────────────────────────────────────
+
+message UpdateWebhookRequest {
+  string          webhook_id   = 1;
+  string          url          = 2;
+  repeated string events       = 3;
+  RetryPolicy     retry_policy = 4;
+  bool            enabled      = 5;
+}
+
+message UpdateWebhookResponse {
+  WebhookSubscription webhook = 1;
+}
+
+// ─── DeleteWebhook ───────────────────────────────────────────────────────────
+
+message DeleteWebhookRequest {
+  string webhook_id = 1;
+}
+
+message DeleteWebhookResponse {
+  bool success = 1;
+}
+
+// ─── ListWebhooks ────────────────────────────────────────────────────────────
+
+message ListWebhooksRequest {
+  int32  page_size  = 1;
+  string page_token = 2;
+  bool   enabled    = 3;
+}
+
+message ListWebhooksResponse {
+  repeated WebhookSubscription webhooks  = 1;
+  PageInfo                     page_info = 2;
+}
+
+// ─── GetWebhookDelivery ──────────────────────────────────────────────────────
+
+message GetWebhookDeliveryRequest {
+  string delivery_id = 1;
+}
+
+message GetWebhookDeliveryResponse {
+  WebhookDelivery delivery = 1;
+}
+
+// ─── RetryWebhookDelivery ────────────────────────────────────────────────────
+
+message RetryWebhookDeliveryRequest {
+  string delivery_id = 1;
+}
+
+message RetryWebhookDeliveryResponse {
+  WebhookDelivery delivery = 1;
+}
+
+// ─── RotateWebhookSecret ─────────────────────────────────────────────────────
+
+message RotateWebhookSecretRequest {
+  string webhook_id = 1;
+}
+
+message RotateWebhookSecretResponse {
+  // New secret — shown ONCE; previous secret is immediately invalidated.
+  string new_secret = 1;
+}

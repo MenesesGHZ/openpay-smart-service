@@ -1,0 +1,65 @@
+server:
+  grpc_port: 50051
+  http_port: 8080
+  request_timeout_sec: 30
+  # tls_cert_file: /certs/server.crt
+  # tls_key_file:  /certs/server.key
+
+openpay:
+  environment: sandbox
+  sandbox_base_url: https://sandbox-api.openpay.mx/v1
+  prod_base_url:    https://api.openpay.mx/v1
+  http_timeout_ms:  10000
+  max_retries:      3
+  forward_client_ip: true   # required by OpenPay anti-fraud policy
+
+  # !! NEVER put real credentials in this file !!
+  # These are the SERVICE OWNER's single merchant account credentials.
+  # All tenant payments flow through this one account.
+  # Set via environment variables only (see .env.example):
+  #   OPENPAY_OPENPAY_MERCHANT_ID
+  #   OPENPAY_OPENPAY_PRIVATE_KEY
+  #   OPENPAY_OPENPAY_PUBLIC_KEY           (used by JS/mobile SDK client-side)
+  #   OPENPAY_OPENPAY_WEBHOOK_INGRESS_SECRET
+  merchant_id:            ""
+  private_key:            ""
+  public_key:             ""
+  webhook_ingress_secret: ""
+
+database:
+  # Override via OPENPAY_DATABASE_DSN env var
+  dsn: postgres://openpay:openpay@localhost:5432/openpay_smart?sslmode=disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+
+redis:
+  addr: localhost:6379
+  password: ""
+  db: 0
+
+kafka:
+  brokers:
+    - localhost:9092
+  consumer_group: openpay-smart-workers
+  topic_payment_events:         payment.events
+  topic_disbursement_commands:  disbursement.commands
+  topic_webhook_outbound:       webhook.outbound
+  topic_webhook_dlq:            webhook.dlq
+  topic_audit_events:           audit.events
+
+disbursement:
+  default_frequency: daily
+  default_cron: "0 18 * * *"   # 18:00 UTC every day
+  min_interval_hours: 1
+
+webhook:
+  dispatch_timeout_ms: 5000
+  max_attempts: 7
+  retry_intervals_sec: [5, 30, 120, 600, 3600, 21600, 86400]
+
+telemetry:
+  service_name: openpay-smart-service
+  log_level: info                        # trace | debug | info | warn | error
+  jaeger_endpoint: http://localhost:14268/api/traces
+  prometheus_port: 9090
