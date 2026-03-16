@@ -37,6 +37,25 @@ service MemberService {
   rpc ExpirePaymentLink (ExpirePaymentLinkRequest) returns (ExpirePaymentLinkResponse) {
     option (google.api.http) = { post: "/v1/payment-links/{link_id}/expire" body: "*" };
   }
+
+  // Card registration — receives token from OpenPay JS SDK, never raw card numbers
+  rpc RegisterCard (RegisterCardRequest) returns (RegisterCardResponse) {
+    option (google.api.http) = { post: "/v1/members/{member_id}/cards" body: "*" };
+  }
+  rpc ListCards (ListCardsRequest) returns (ListCardsResponse) {
+    option (google.api.http) = { get: "/v1/members/{member_id}/cards" };
+  }
+  rpc DeleteCard (DeleteCardRequest) returns (DeleteCardResponse) {
+    option (google.api.http) = { delete: "/v1/members/{member_id}/cards/{card_id}" };
+  }
+
+  // Subscription links — shareable checkout URL for plan self-enrollment
+  rpc CreateSubscriptionLink (CreateSubscriptionLinkRequest) returns (CreateSubscriptionLinkResponse) {
+    option (google.api.http) = { post: "/v1/members/{member_id}/subscription-links" body: "*" };
+  }
+  rpc RedeemSubscriptionLink (RedeemSubscriptionLinkRequest) returns (RedeemSubscriptionLinkResponse) {
+    option (google.api.http) = { post: "/v1/subscription-links/{token}/redeem" body: "*" };
+  }
 }
 
 // ─── Domain objects ──────────────────────────────────────────────────────────
@@ -171,4 +190,66 @@ message ExpirePaymentLinkRequest {
 
 message ExpirePaymentLinkResponse {
   PaymentLink link = 1;
+}
+
+// ─── Card messages ────────────────────────────────────────────────────────────
+
+message Card {
+  string id               = 1;
+  string member_id        = 2;
+  string brand            = 3;   // "visa" | "mastercard" | "carnet" | "amex"
+  string card_type        = 4;   // "debit" | "credit" | "prepaid"
+  string last_four        = 5;
+  string holder_name      = 6;
+  string expiration_year  = 7;
+  string expiration_month = 8;
+  string bank_name        = 9;
+  bool   allows_charges   = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+
+message RegisterCardRequest {
+  string member_id         = 1;
+  string token_id          = 2;  // one-time token from OpenPay JS SDK
+  string device_session_id = 3;  // anti-fraud session ID from OpenPay JS SDK
+}
+message RegisterCardResponse { Card card = 1; }
+
+message ListCardsRequest  { string member_id = 1; }
+message ListCardsResponse { repeated Card cards = 1; }
+
+message DeleteCardRequest  { string member_id = 1; string card_id = 2; }
+message DeleteCardResponse { bool success = 1; }
+
+// ─── SubscriptionLink messages ────────────────────────────────────────────────
+
+message SubscriptionLink {
+  string                    id              = 1;
+  string                    member_id       = 2;
+  string                    plan_id         = 3;
+  string                    token           = 4;
+  string                    status          = 5; // pending | completed | expired | cancelled
+  string                    subscription_id = 6; // set after redemption
+  google.protobuf.Timestamp expires_at      = 7;
+  google.protobuf.Timestamp created_at      = 8;
+}
+
+message CreateSubscriptionLinkRequest {
+  string member_id       = 1;
+  string plan_id         = 2;
+  int64  expires_in_secs = 3; // 0 = no expiry
+}
+message CreateSubscriptionLinkResponse {
+  SubscriptionLink link         = 1;
+  string           checkout_url = 2; // share this with the member
+}
+
+message RedeemSubscriptionLinkRequest {
+  string token             = 1;
+  string token_id          = 2;  // from OpenPay JS SDK card tokenization
+  string device_session_id = 3;
+}
+message RedeemSubscriptionLinkResponse {
+  SubscriptionLink link            = 1;
+  string           subscription_id = 2;
 }

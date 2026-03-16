@@ -18,7 +18,7 @@ type Plan struct {
 	RepeatEvery      int     `json:"repeat_every"` // e.g. 1
 	RepeatUnit       string  `json:"repeat_unit"`  // "week" | "month" | "year"
 	RetryTimes       int     `json:"retry_times"`
-	StatusOnRetryEnd string  `json:"status_on_retry_end"` // "cancelled" | "unpaid"
+	StatusOnRetryEnd string  `json:"status_after_retry"` // "cancelled" | "unpaid"
 	TrialDays        int     `json:"trial_days"`
 }
 
@@ -29,7 +29,7 @@ type CreatePlanRequest struct {
 	RepeatEvery      int     `json:"repeat_every"`          // e.g. 1
 	RepeatUnit       string  `json:"repeat_unit"`           // "week" | "month" | "year"
 	RetryTimes       int     `json:"retry_times,omitempty"` // default 3
-	StatusOnRetryEnd string  `json:"status_on_retry_end"`   // "cancelled" | "unpaid"
+	StatusOnRetryEnd string  `json:"status_after_retry"`    // "cancelled" | "unpaid"
 	TrialDays        int     `json:"trial_days,omitempty"`
 }
 

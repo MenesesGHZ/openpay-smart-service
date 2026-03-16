@@ -6,6 +6,37 @@ import (
 	"github.com/google/uuid"
 )
 
+// MemberCard is a stored card registered against a member via OpenPay JS SDK tokenization.
+type MemberCard struct {
+	ID              uuid.UUID `db:"id"`
+	TenantID        uuid.UUID `db:"tenant_id"`
+	MemberID        uuid.UUID `db:"member_id"`
+	OpenpayCardID   string    `db:"openpay_card_id"`
+	CardType        string    `db:"card_type"`
+	Brand           string    `db:"brand"`
+	LastFour        string    `db:"last_four"`
+	HolderName      string    `db:"holder_name"`
+	ExpirationYear  string    `db:"expiration_year"`
+	ExpirationMonth string    `db:"expiration_month"`
+	BankName        string    `db:"bank_name"`
+	AllowsCharges   bool      `db:"allows_charges"`
+	CreatedAt       time.Time `db:"created_at"`
+}
+
+// SubscriptionLink is a shareable token a tenant creates for a member to self-subscribe to a plan.
+type SubscriptionLink struct {
+	ID             uuid.UUID  `db:"id"`
+	TenantID       uuid.UUID  `db:"tenant_id"`
+	MemberID       uuid.UUID  `db:"member_id"`
+	PlanID         uuid.UUID  `db:"plan_id"`
+	Token          string     `db:"token"`
+	Status         string     `db:"status"`         // "pending" | "completed" | "expired" | "cancelled"
+	SubscriptionID *uuid.UUID `db:"subscription_id"`
+	ExpiresAt      *time.Time `db:"expires_at"`
+	CreatedAt      time.Time  `db:"created_at"`
+	CompletedAt    *time.Time `db:"completed_at"`
+}
+
 // KYCStatus represents a member's identity verification state.
 type KYCStatus string
 

@@ -59,6 +59,18 @@ type MemberRepository interface {
 	GetPaymentLinkByID(ctx context.Context, tenantID, linkID uuid.UUID) (*domain.PaymentLink, error)
 	UpdatePaymentLink(ctx context.Context, l *domain.PaymentLink) error
 	ListPaymentLinks(ctx context.Context, opts ListPaymentLinksOptions) ([]*domain.PaymentLink, string, error)
+
+	// Card management
+	CreateCard(ctx context.Context, card *domain.MemberCard) error
+	GetCardByID(ctx context.Context, tenantID, memberID, cardID uuid.UUID) (*domain.MemberCard, error)
+	ListCards(ctx context.Context, tenantID, memberID uuid.UUID) ([]*domain.MemberCard, error)
+	DeleteCard(ctx context.Context, tenantID, memberID, cardID uuid.UUID) error
+
+	// Subscription links
+	CreateSubscriptionLink(ctx context.Context, link *domain.SubscriptionLink) error
+	GetSubscriptionLinkByToken(ctx context.Context, token string) (*domain.SubscriptionLink, error)
+	GetSubscriptionLinkByID(ctx context.Context, tenantID, linkID uuid.UUID) (*domain.SubscriptionLink, error)
+	UpdateSubscriptionLink(ctx context.Context, link *domain.SubscriptionLink) error
 }
 
 type ListMembersOptions struct {

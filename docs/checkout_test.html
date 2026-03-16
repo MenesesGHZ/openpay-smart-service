@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenPay Checkout – Sandbox Test</title>
+
+  <!--
+    OpenPay.js Sandbox SDK
+    Generates device fingerprint (device_session_id) and tokenizes card numbers
+    so raw PANs never reach your backend.
+  -->
+  <script src="https://js.openpay.mx/openpay.v1.min.js"></script>
+  <script src="https://js.openpay.mx/openpay-data.v1.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; display: flex; justify-content: center; padding: 40px 16px; }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.1);
+      padding: 32px;
+      width: 100%;
+      max-width: 460px;
+    }
+    h1 { font-size: 1.25rem; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: .875rem; margin-bottom: 24px; }
+
+    /* Config panel */
+    .config { background: #f8f8f8; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+    .config h2 { font-size: .875rem; font-weight: 600; margin-bottom: 12px; color: #444; text-transform: uppercase; letter-spacing: .05em; }
+
+    label { display: block; font-size: .8125rem; font-weight: 500; color: #555; margin-bottom: 4px; margin-top: 12px; }
+    input, select {
+      width: 100%;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: .875rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus { border-color: #5c6bc0; }
+
+    /* Test card hint */
+    .test-hint {
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: .8125rem;
+      color: #2e7d32;
+      margin: 16px 0;
+    }
+    .test-hint strong { display: block; margin-bottom: 4px; }
+
+    /* Card fields */
+    .row { display: flex; gap: 12px; }
+    .row > * { flex: 1; }
+
+    /* Action buttons */
+    .actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+    button {
+      padding: 11px 18px;
+      border: none;
+      border-radius: 8px;
+      font-size: .9375rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    button:hover:not(:disabled) { opacity: .85; }
+    button:disabled { opacity: .5; cursor: default; }
+    .btn-primary { background: #5c6bc0; color: #fff; }
+    .btn-secondary { background: #eee; color: #333; }
+
+    /* Mode selector */
+    .mode-tabs { display: flex; gap: 0; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .mode-tab {
+      flex: 1;
+      padding: 9px;
+      text-align: center;
+      cursor: pointer;
+      font-size: .875rem;
+      font-weight: 500;
+      background: #f5f5f5;
+      border: none;
+      transition: background .15s;
+    }
+    .mode-tab.active { background: #5c6bc0; color: #fff; }
+
+    /* Output */
+    .output {
+      margin-top: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      border-radius: 8px;
+      padding: 14px;
+      font-family: monospace;
+      font-size: .75rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 320px;
+      overflow-y: auto;
+      display: none;
+    }
+    .output.visible { display: block; }
+    .out-success { color: #4ec9b0; }
+    .out-error   { color: #f48771; }
+    .out-label   { color: #9cdcfe; }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>🔐 OpenPay Checkout</h1>
+  <p class="subtitle">Sandbox test — card numbers never leave the browser.</p>
+
+  <!-- Config -->
+  <div class="config">
+    <h2>Service config</h2>
+    <label>Service base URL</label>
+    <input id="cfgBaseUrl" value="http://localhost:8080" />
+
+    <label>Tenant API key (Bearer)</label>
+    <input id="cfgApiKey" value="opk_b42a3e09d74bbd0d4878bf63f3224346d169e221a6b2d585b53a8b73f2187319" />
+
+    <label>OpenPay Merchant ID</label>
+    <input id="cfgMerchantId" value="m90emnf0vev27rbg3cjc" />
+
+    <label>OpenPay Public Key (sandbox)</label>
+    <input id="cfgPublicKey" value="pk_f22f6090b2904ccc94c382f69e670599" />
+  </div>
+
+  <!-- Mode -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tabRegister" onclick="setMode('register')">Register Card</button>
+    <button class="mode-tab" id="tabRedeem" onclick="setMode('redeem')">Redeem Subscription Link</button>
+  </div>
+
+  <!-- Register Card mode -->
+  <div id="modeRegister">
+    <label>Member ID</label>
+    <input id="regMemberId" value="b6a0bf36-7f01-4ef0-97ec-deea51971339" />
+  </div>
+
+  <!-- Redeem Subscription Link mode -->
+  <div id="modeRedeem" style="display:none">
+    <label>Subscription Link Token</label>
+    <input id="redeemToken" value="7vAN45Xb10LKtZw7SIXPgNTI" />
+  </div>
+
+  <!-- Card fields -->
+  <div class="test-hint">
+    <strong>Test card numbers (sandbox):</strong>
+    5243385358972033 — Mastercard (success)<br>
+    4111111111111111 — Visa (success)<br>
+    4000000000000002 — Visa (declined – insufficient funds)
+  </div>
+
+  <label>Card number</label>
+  <input id="cardNumber" value="5243385358972033" maxlength="19" />
+
+  <div class="row">
+    <div>
+      <label>Holder name</label>
+      <input id="holderName" value="Juan Perez" />
+    </div>
+    <div>
+      <label>CVV</label>
+      <input id="cvv" value="111" maxlength="4" />
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>Exp. month</label>
+      <input id="expMonth" value="12" maxlength="2" />
+    </div>
+    <div>
+      <label>Exp. year</label>
+      <input id="expYear" value="30" maxlength="2" />
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" id="submitBtn" onclick="submit()">Pay &amp; Subscribe</button>
+    <button class="btn-secondary" onclick="clearOutput()">Clear output</button>
+  </div>
+
+  <pre class="output" id="output"></pre>
+</div>
+
+<script>
+// ── state ─────────────────────────────────────────────────────────────────────
+let mode = 'register'; // 'register' | 'redeem'
+let deviceSessionId = null;
+let sdkReady = false;
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('modeRegister').style.display = m === 'register' ? '' : 'none';
+  document.getElementById('modeRedeem').style.display   = m === 'redeem'   ? '' : 'none';
+  document.getElementById('tabRegister').className = 'mode-tab' + (m === 'register' ? ' active' : '');
+  document.getElementById('tabRedeem').className   = 'mode-tab' + (m === 'redeem'   ? ' active' : '');
+}
+
+// ── OpenPay SDK init (called once at page load) ───────────────────────────────
+// setup() returns immediately but uploads the browser fingerprint asynchronously.
+// Calling it at load time — not at click time — gives the fingerprint upload
+// several seconds to complete before the user ever clicks "Pay & Subscribe",
+// which is why OpenPay's anti-fraud server responds instead of timing out.
+function initOpenPayAtLoad() {
+  const mid  = document.getElementById('cfgMerchantId').value.trim();
+  const pkey = document.getElementById('cfgPublicKey').value.trim();
+  if (!mid || !pkey) return;
+
+  OpenPay.setId(mid);
+  OpenPay.setApiKey(pkey);
+  OpenPay.setSandboxMode(true);
+
+  deviceSessionId = OpenPay.deviceData.setup();
+  sdkReady = true;
+  console.log('[OpenPay] SDK ready, device_session_id:', deviceSessionId);
+}
+
+// Re-run SDK init whenever the merchant config changes.
+function onConfigChange() {
+  sdkReady = false;
+  deviceSessionId = null;
+  initOpenPayAtLoad();
+}
+
+// ── tokenize card via OpenPay SDK ────────────────────────────────────────────
+function tokenizeCard() {
+  return new Promise((resolve, reject) => {
+    const cardData = {
+      card_number:      document.getElementById('cardNumber').value.replace(/\s/g, ''),
+      holder_name:      document.getElementById('holderName').value,
+      expiration_year:  document.getElementById('expYear').value,
+      expiration_month: document.getElementById('expMonth').value,
+      cvv2:             document.getElementById('cvv').value,
+    };
+
+    for (const [k, v] of Object.entries(cardData)) {
+      if (!v) { reject(new Error('Fill in ' + k)); return; }
+    }
+
+    log('label', 'Tokenizing card via OpenPay.js SDK…');
+    OpenPay.token.create(cardData, (data) => {
+      log('success', 'token_id: ' + data.data.id);
+      resolve(data.data.id);
+    }, (err) => {
+      reject(new Error('Tokenization failed: ' + JSON.stringify(err.data)));
+    });
+  });
+}
+
+// ── main flow ─────────────────────────────────────────────────────────────────
+async function submit() {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Processing…';
+  try {
+    if (!sdkReady) {
+      // Fallback: init now if page loaded without config values present.
+      initOpenPayAtLoad();
+      if (!sdkReady) { log('error', 'Set Merchant ID and Public Key first.'); return; }
+      // Give the async fingerprint upload a moment to complete.
+      log('label', 'Waiting for device fingerprint upload…');
+      await new Promise(r => setTimeout(r, 3000));
+    }
+
+    log('label', 'device_session_id: ' + deviceSessionId);
+    const tokenId = await tokenizeCard();
+
+    const baseUrl = document.getElementById('cfgBaseUrl').value.replace(/\/$/, '');
+    const apiKey  = document.getElementById('cfgApiKey').value.trim();
+    const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey };
+
+    if (mode === 'register') {
+      // ── POST /v1/members/{id}/cards ──────────────────────────────────────
+      const memberId = document.getElementById('regMemberId').value.trim();
+      if (!memberId) { log('error', 'Member ID is required'); return; }
+
+      log('label', '\nPOST /v1/members/' + memberId + '/cards');
+      const body = { token_id: tokenId, device_session_id: deviceSessionId };
+      log('label', 'Request: ' + JSON.stringify(body, null, 2));
+
+      const res  = await fetch(baseUrl + '/v1/members/' + memberId + '/cards', { method: 'POST', headers, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) {
+        log('error', 'HTTP ' + res.status + ': ' + JSON.stringify(data, null, 2));
+      } else {
+        log('success', 'Card registered! ' + JSON.stringify(data, null, 2));
+      }
+
+    } else {
+      // ── POST /v1/subscription-links/{token}/redeem ───────────────────────
+      const token = document.getElementById('redeemToken').value.trim();
+      if (!token) { log('error', 'Subscription link token is required'); return; }
+
+      log('label', '\nPOST /v1/subscription-links/' + token + '/redeem');
+      const body = { token_id: tokenId, device_session_id: deviceSessionId };
+      log('label', 'Request: ' + JSON.stringify(body, null, 2));
+
+      const res  = await fetch(baseUrl + '/v1/subscription-links/' + token + '/redeem', { method: 'POST', headers, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) {
+        log('error', 'HTTP ' + res.status + ': ' + JSON.stringify(data, null, 2));
+      } else {
+        log('success', 'Subscription redeemed! ' + JSON.stringify(data, null, 2));
+      }
+    }
+  } catch (err) {
+    log('error', 'Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Pay &amp; Subscribe';
+  }
+}
+
+// ── bootstrap ─────────────────────────────────────────────────────────────────
+// Run SDK init as soon as the page loads so the fingerprint upload has time
+// to complete well before the user clicks the button.
+window.addEventListener('load', () => {
+  initOpenPayAtLoad();
+  // Re-init if the user changes the Merchant ID or Public Key fields.
+  document.getElementById('cfgMerchantId').addEventListener('change', onConfigChange);
+  document.getElementById('cfgPublicKey').addEventListener('change', onConfigChange);
+});
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+function log(type, msg) {
+  const out = document.getElementById('output');
+  out.classList.add('visible');
+  const span = document.createElement('span');
+  span.className = 'out-' + type;
+  span.textContent = msg + '\n';
+  out.appendChild(span);
+  out.scrollTop = out.scrollHeight;
+}
+
+function clearOutput() {
+  const out = document.getElementById('output');
+  out.innerHTML = '';
+  out.classList.remove('visible');
+}
+</script>
+</body>
+</html>

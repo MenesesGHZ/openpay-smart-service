@@ -320,6 +320,170 @@ func (r *MemberRepo) ListPaymentLinks(ctx context.Context, opts repository.ListP
 	return links, nextToken, nil
 }
 
+// ── Card management ───────────────────────────────────────────────────────────
+
+func (r *MemberRepo) CreateCard(ctx context.Context, card *domain.MemberCard) error {
+	if card.ID == uuid.Nil {
+		card.ID = uuid.New()
+	}
+	card.CreatedAt = time.Now()
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO member_cards (
+			id, tenant_id, member_id, openpay_card_id,
+			card_type, brand, last_four, holder_name,
+			expiration_year, expiration_month, bank_name, allows_charges, created_at
+		) VALUES (
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
+		)`,
+		card.ID, card.TenantID, card.MemberID, card.OpenpayCardID,
+		nilIfEmpty(card.CardType), nilIfEmpty(card.Brand), card.LastFour, nilIfEmpty(card.HolderName),
+		nilIfEmpty(card.ExpirationYear), nilIfEmpty(card.ExpirationMonth), nilIfEmpty(card.BankName),
+		card.AllowsCharges, card.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("member_card.Create: %w", err)
+	}
+	return nil
+}
+
+func (r *MemberRepo) GetCardByID(ctx context.Context, tenantID, memberID, cardID uuid.UUID) (*domain.MemberCard, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT id, tenant_id, member_id, openpay_card_id,
+			card_type, brand, last_four, holder_name,
+			expiration_year, expiration_month, bank_name, allows_charges, created_at
+		FROM member_cards
+		WHERE id=$1 AND tenant_id=$2 AND member_id=$3`,
+		cardID, tenantID, memberID,
+	)
+	c, err := scanMemberCard(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("member_card.GetByID: %w", err)
+	}
+	return c, nil
+}
+
+func (r *MemberRepo) ListCards(ctx context.Context, tenantID, memberID uuid.UUID) ([]*domain.MemberCard, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, tenant_id, member_id, openpay_card_id,
+			card_type, brand, last_four, holder_name,
+			expiration_year, expiration_month, bank_name, allows_charges, created_at
+		FROM member_cards
+		WHERE tenant_id=$1 AND member_id=$2
+		ORDER BY created_at DESC`,
+		tenantID, memberID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("member_card.List: %w", err)
+	}
+	defer rows.Close()
+
+	var cards []*domain.MemberCard
+	for rows.Next() {
+		c, err := scanMemberCardRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		cards = append(cards, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("member_card.List rows: %w", err)
+	}
+	return cards, nil
+}
+
+func (r *MemberRepo) DeleteCard(ctx context.Context, tenantID, memberID, cardID uuid.UUID) error {
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM member_cards
+		WHERE id=$1 AND tenant_id=$2 AND member_id=$3`,
+		cardID, tenantID, memberID,
+	)
+	if err != nil {
+		return fmt.Errorf("member_card.Delete: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// ── Subscription links ────────────────────────────────────────────────────────
+
+func (r *MemberRepo) CreateSubscriptionLink(ctx context.Context, link *domain.SubscriptionLink) error {
+	if link.ID == uuid.Nil {
+		link.ID = uuid.New()
+	}
+	link.CreatedAt = time.Now()
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO subscription_links (
+			id, tenant_id, member_id, plan_id, token,
+			status, subscription_id, expires_at, created_at, completed_at
+		) VALUES (
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+		)`,
+		link.ID, link.TenantID, link.MemberID, link.PlanID, link.Token,
+		link.Status, link.SubscriptionID, link.ExpiresAt, link.CreatedAt, link.CompletedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("subscription_link.Create: %w", err)
+	}
+	return nil
+}
+
+func (r *MemberRepo) GetSubscriptionLinkByToken(ctx context.Context, token string) (*domain.SubscriptionLink, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT id, tenant_id, member_id, plan_id, token,
+			status, subscription_id, expires_at, created_at, completed_at
+		FROM subscription_links
+		WHERE token=$1`,
+		token,
+	)
+	l, err := scanSubscriptionLink(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("subscription_link.GetByToken: %w", err)
+	}
+	return l, nil
+}
+
+func (r *MemberRepo) GetSubscriptionLinkByID(ctx context.Context, tenantID, linkID uuid.UUID) (*domain.SubscriptionLink, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT id, tenant_id, member_id, plan_id, token,
+			status, subscription_id, expires_at, created_at, completed_at
+		FROM subscription_links
+		WHERE id=$1 AND tenant_id=$2`,
+		linkID, tenantID,
+	)
+	l, err := scanSubscriptionLink(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("subscription_link.GetByID: %w", err)
+	}
+	return l, nil
+}
+
+func (r *MemberRepo) UpdateSubscriptionLink(ctx context.Context, link *domain.SubscriptionLink) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE subscription_links
+		SET status=$1, subscription_id=$2, completed_at=$3
+		WHERE id=$4`,
+		link.Status, link.SubscriptionID, link.CompletedAt, link.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("subscription_link.Update: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 // ── scan helpers ──────────────────────────────────────────────────────────────
 
 func scanMember(row pgx.Row) (*domain.Member, error) {
@@ -437,6 +601,69 @@ func scanPaymentLinkRows(rows pgx.Rows) (*domain.PaymentLink, error) {
 	}
 	if orderID != nil {
 		l.OrderID = *orderID
+	}
+	return &l, nil
+}
+
+func scanMemberCard(row pgx.Row) (*domain.MemberCard, error) {
+	var c domain.MemberCard
+	var cardType, brand, holderName, expYear, expMonth, bankName *string
+	err := row.Scan(
+		&c.ID, &c.TenantID, &c.MemberID, &c.OpenpayCardID,
+		&cardType, &brand, &c.LastFour, &holderName,
+		&expYear, &expMonth, &bankName, &c.AllowsCharges, &c.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	applyMemberCardNullable(&c, cardType, brand, holderName, expYear, expMonth, bankName)
+	return &c, nil
+}
+
+func scanMemberCardRows(rows pgx.Rows) (*domain.MemberCard, error) {
+	var c domain.MemberCard
+	var cardType, brand, holderName, expYear, expMonth, bankName *string
+	err := rows.Scan(
+		&c.ID, &c.TenantID, &c.MemberID, &c.OpenpayCardID,
+		&cardType, &brand, &c.LastFour, &holderName,
+		&expYear, &expMonth, &bankName, &c.AllowsCharges, &c.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	applyMemberCardNullable(&c, cardType, brand, holderName, expYear, expMonth, bankName)
+	return &c, nil
+}
+
+func applyMemberCardNullable(c *domain.MemberCard, cardType, brand, holderName, expYear, expMonth, bankName *string) {
+	if cardType != nil {
+		c.CardType = *cardType
+	}
+	if brand != nil {
+		c.Brand = *brand
+	}
+	if holderName != nil {
+		c.HolderName = *holderName
+	}
+	if expYear != nil {
+		c.ExpirationYear = *expYear
+	}
+	if expMonth != nil {
+		c.ExpirationMonth = *expMonth
+	}
+	if bankName != nil {
+		c.BankName = *bankName
+	}
+}
+
+func scanSubscriptionLink(row pgx.Row) (*domain.SubscriptionLink, error) {
+	var l domain.SubscriptionLink
+	err := row.Scan(
+		&l.ID, &l.TenantID, &l.MemberID, &l.PlanID, &l.Token,
+		&l.Status, &l.SubscriptionID, &l.ExpiresAt, &l.CreatedAt, &l.CompletedAt,
+	)
+	if err != nil {
+		return nil, err
 	}
 	return &l, nil
 }
