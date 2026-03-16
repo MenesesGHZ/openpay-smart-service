@@ -8,9 +8,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/menesesghz/openpay-smart-service/internal/domain"
+	"github.com/menesesghz/openpay-smart-service/internal/repository"
+
 	"github.com/rs/zerolog"
-	"github.com/your-org/openpay-smart-service/internal/domain"
-	"github.com/your-org/openpay-smart-service/internal/repository"
 )
 
 // Dispatcher sends webhook payloads to tenant endpoints and manages retry logic.
@@ -30,9 +31,9 @@ func NewDispatcher(
 	intervals []int,
 ) *Dispatcher {
 	return &Dispatcher{
-		repo: repo,
-		http: &http.Client{Timeout: time.Duration(timeoutMS) * time.Millisecond},
-		log:  log.With().Str("component", "webhook_dispatcher").Logger(),
+		repo:        repo,
+		http:        &http.Client{Timeout: time.Duration(timeoutMS) * time.Millisecond},
+		log:         log.With().Str("component", "webhook_dispatcher").Logger(),
 		timeoutMS:   timeoutMS,
 		maxAttempts: maxAttempts,
 		intervals:   intervals,

@@ -10,27 +10,27 @@ import (
 //          GET      /v1/{merchantId}/charges
 
 type ChargeCard struct {
-	Type           string `json:"type"`
-	Brand          string `json:"brand"`
-	Address        *CustomerAddress `json:"address,omitempty"`
-	CardNumber     string `json:"card_number"`     // masked, last four digits
-	HolderName     string `json:"holder_name"`
-	ExpirationYear string `json:"expiration_year"`
-	ExpirationMonth string `json:"expiration_month"`
-	AllowsCharges  bool   `json:"allows_charges"`
-	AllowsPayouts  bool   `json:"allows_payouts"`
-	BankName       string `json:"bank_name"`
-	BankCode       string `json:"bank_code"`
+	Type            string           `json:"type"`
+	Brand           string           `json:"brand"`
+	Address         *CustomerAddress `json:"address,omitempty"`
+	CardNumber      string           `json:"card_number"` // masked, last four digits
+	HolderName      string           `json:"holder_name"`
+	ExpirationYear  string           `json:"expiration_year"`
+	ExpirationMonth string           `json:"expiration_month"`
+	AllowsCharges   bool             `json:"allows_charges"`
+	AllowsPayouts   bool             `json:"allows_payouts"`
+	BankName        string           `json:"bank_name"`
+	BankCode        string           `json:"bank_code"`
 }
 
 // PaymentMethodDetails is returned for bank / store charges.
 type PaymentMethodDetails struct {
-	Type      string `json:"type"`       // bank_account | store
-	Agreement string `json:"agreement,omitempty"` // Bancomer CIE
-	Bank      string `json:"bank,omitempty"`
-	CLABE     string `json:"clabe,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Reference string `json:"reference,omitempty"`
+	Type       string `json:"type"`                // bank_account | store
+	Agreement  string `json:"agreement,omitempty"` // Bancomer CIE
+	Bank       string `json:"bank,omitempty"`
+	CLABE      string `json:"clabe,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Reference  string `json:"reference,omitempty"`
 	BarcodeURL string `json:"barcode_url,omitempty"` // for store charges
 }
 
@@ -54,21 +54,21 @@ type Charge struct {
 }
 
 type FeeDetails struct {
-	Amount      float64 `json:"amount"`
-	Tax         float64 `json:"tax"`
-	Currency    string  `json:"currency"`
+	Amount   float64 `json:"amount"`
+	Tax      float64 `json:"tax"`
+	Currency string  `json:"currency"`
 }
 
 // CreateChargeRequest — card charge using a stored card ID.
 type CreateCardChargeRequest struct {
-	Method      string  `json:"method"`   // "card"
-	SourceID    string  `json:"source_id"` // OpenPay card ID
-	Amount      float64 `json:"amount"`
-	Currency    string  `json:"currency"`
-	Description string  `json:"description"`
-	OrderID     string  `json:"order_id,omitempty"`
-	DeviceSessionID string `json:"device_session_id,omitempty"` // anti-fraud
-	Capture     bool    `json:"capture"` // true = immediate capture
+	Method          string  `json:"method"`    // "card"
+	SourceID        string  `json:"source_id"` // OpenPay card ID
+	Amount          float64 `json:"amount"`
+	Currency        string  `json:"currency"`
+	Description     string  `json:"description"`
+	OrderID         string  `json:"order_id,omitempty"`
+	DeviceSessionID string  `json:"device_session_id,omitempty"` // anti-fraud
+	Capture         bool    `json:"capture"`                     // true = immediate capture
 }
 
 // CreateBankChargeRequest — generates a SPEI CLABE for the customer to transfer to.

@@ -11,7 +11,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/your-org/openpay-smart-service/internal/config"
+	"github.com/menesesghz/openpay-smart-service/internal/config"
 )
 
 var cfgPath = flag.String("config", "config.yaml", "path to config file")

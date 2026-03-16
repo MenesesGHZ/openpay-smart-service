@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/menesesghz/openpay-smart-service/internal/config"
+	"github.com/menesesghz/openpay-smart-service/internal/domain"
 	"github.com/rs/zerolog"
-	"github.com/your-org/openpay-smart-service/internal/config"
-	"github.com/your-org/openpay-smart-service/internal/domain"
 )
 
 // Client is a thread-safe OpenPay REST API client for the service-owner merchant.

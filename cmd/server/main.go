@@ -19,8 +19,14 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	"github.com/your-org/openpay-smart-service/internal/config"
-	"github.com/your-org/openpay-smart-service/internal/middleware"
+	openpayv1 "github.com/menesesghz/openpay-smart-service/gen/openpay/v1"
+	"github.com/menesesghz/openpay-smart-service/internal/config"
+	"github.com/menesesghz/openpay-smart-service/internal/kafka"
+	"github.com/menesesghz/openpay-smart-service/internal/middleware"
+	"github.com/menesesghz/openpay-smart-service/internal/openpay"
+	"github.com/menesesghz/openpay-smart-service/internal/repository/postgres"
+	"github.com/menesesghz/openpay-smart-service/internal/service"
+	"github.com/menesesghz/openpay-smart-service/internal/webhook"
 )
 
 var (
@@ -49,33 +55,75 @@ func main() {
 
 	log.Info().Str("env", cfg.OpenPay.Environment).Msg("starting openpay-smart-service")
 
+	ctx := context.Background()
+
+	// ── PostgreSQL ────────────────────────────────────────────────────────────
+	db, err := postgres.Connect(ctx, cfg.Database)
+	if err != nil {
+		log.Fatal().Err(err).Msg("cannot connect to PostgreSQL")
+	}
+	defer db.Close()
+	log.Info().Msg("PostgreSQL connected")
+
+	// ── Repositories ─────────────────────────────────────────────────────────
+	tenantRepo := postgres.NewTenantRepo(db, cfg.Encryption.AESKeyHex)
+	paymentRepo := postgres.NewPaymentRepo(db)
+	balanceRepo := postgres.NewBalanceRepo(db)
+
 	// ── Redis ─────────────────────────────────────────────────────────────────
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
+	if err := rdb.Ping(ctx).Err(); err != nil {
 		log.Fatal().Err(err).Msg("cannot connect to Redis")
 	}
+	log.Info().Msg("Redis connected")
+
+	// ── OpenPay client (singleton, service-owner credentials) ─────────────────
+	opClient := openpay.NewClientFromConfig(cfg.OpenPay, log.Logger)
+
+	// ── Kafka publisher ───────────────────────────────────────────────────────
+	kafkaPublisher := kafka.NewPublisher(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.TopicPaymentEvents,
+		log.Logger,
+	)
+	defer func() {
+		if err := kafkaPublisher.Close(); err != nil {
+			log.Error().Err(err).Msg("kafka publisher close error")
+		}
+	}()
+
+	// ── gRPC services ─────────────────────────────────────────────────────────
+	paymentSvc := service.NewPaymentService(paymentRepo, opClient, log.Logger)
 
 	// ── gRPC server ───────────────────────────────────────────────────────────
-	// TODO: inject real repository + service dependencies here as they are built.
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			middleware.LoggingInterceptor(log.Logger),
-			middleware.RateLimitInterceptor(rdb, func(string) middleware.TenantTier {
-				return middleware.TierStandard // TODO: look up per-tenant tier
+			middleware.AuthInterceptor(tenantRepo),
+			middleware.RateLimitInterceptor(rdb, func(tenantID string) middleware.TenantTier {
+				// TODO: look up the tenant's tier from tenantRepo for accurate rate limits.
+				// For now all tenants fall back to Standard.
+				return middleware.TierStandard
 			}),
 		),
+		grpc.ChainStreamInterceptor(
+			middleware.StreamAuthInterceptor(tenantRepo),
+		),
 	)
+
+	// Register service handlers.
+	openpayv1.RegisterPaymentServiceServer(grpcServer, paymentSvc)
 
 	// Health check
 	healthSvc := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(grpcServer, healthSvc)
 	healthSvc.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 
-	// Enable gRPC reflection for tools like grpcurl
+	// gRPC reflection — lets grpcurl list and call methods without proto files.
 	reflection.Register(grpcServer)
 
 	// ── gRPC listener ─────────────────────────────────────────────────────────
@@ -85,13 +133,31 @@ func main() {
 		log.Fatal().Err(err).Str("addr", grpcAddr).Msg("cannot bind gRPC port")
 	}
 
-	// ── HTTP gateway (REST) ───────────────────────────────────────────────────
-	// TODO: register grpc-gateway mux once handler stubs are wired in.
+	// ── HTTP mux ──────────────────────────────────────────────────────────────
 	httpMux := http.NewServeMux()
+
+	// Health probe
 	httpMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	// OpenPay webhook ingress — POST /webhooks/openpay
+	// OpenPay calls this endpoint for every transaction event (charge.succeeded,
+	// charge.failed, etc.). Configure the same URL in the OpenPay dashboard under
+	// Configuración → Notificaciones. Set the "Contraseña" field there to the
+	// value of OPENPAY_OPENPAY_WEBHOOK_INGRESS_SECRET in this service's env.
+	ingressHandler := webhook.NewIngressHandler(
+		cfg.OpenPay.WebhookIngressSecret,
+		paymentRepo,
+		tenantRepo,
+		balanceRepo,
+		kafkaPublisher,
+		log.Logger,
+	)
+	httpMux.Handle("/webhooks/openpay", ingressHandler)
+
+	// TODO: register grpc-gateway mux once REST translation is needed.
 
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.HTTPPort),
@@ -123,9 +189,9 @@ func main() {
 
 	grpcServer.GracefulStop()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := httpSrv.Shutdown(ctx); err != nil {
+	if err := httpSrv.Shutdown(shutCtx); err != nil {
 		log.Error().Err(err).Msg("HTTP shutdown error")
 	}
 

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package openpay.v1;
 
-option go_package = "github.com/your-org/openpay-smart-service/gen/openpay/v1;openpayv1";
+option go_package = "github.com/menesesghz/openpay-smart-service/gen/openpay/v1;openpayv1";
 
 import "google/protobuf/timestamp.proto";
 

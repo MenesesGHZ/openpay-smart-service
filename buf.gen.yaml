@@ -1,0 +1,24 @@
+version: v2
+
+# Code generation config for buf generate.
+# Uses locally-installed protoc plugins (installed via make setup).
+# Output always goes to gen/ with paths=source_relative so imports stay clean.
+
+plugins:
+  # Go structs + marshaling
+  - local: protoc-gen-go
+    out: gen
+    opt:
+      - paths=source_relative
+
+  # gRPC service interfaces + client/server stubs
+  - local: protoc-gen-go-grpc
+    out: gen
+    opt:
+      - paths=source_relative
+
+  # grpc-gateway: generates the REST→gRPC translation layer
+  - local: protoc-gen-grpc-gateway
+    out: gen
+    opt:
+      - paths=source_relative

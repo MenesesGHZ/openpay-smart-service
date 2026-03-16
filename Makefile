@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 # ─── Variables ────────────────────────────────────────────────────────────────
-MODULE      := github.com/your-org/openpay-smart-service
+MODULE      := github.com/menesesghz/openpay-smart-service
 PROTO_DIR   := proto
 GEN_DIR     := gen
 MIGRATE_DIR := migrations
@@ -12,6 +12,7 @@ GO          := go
 GOOSE       := goose
 PROTOC      := protoc
 BUF         := buf
+GOPATH_BIN  := $(shell go env GOPATH)/bin
 
 # ─── Help ─────────────────────────────────────────────────────────────────────
 .PHONY: help
@@ -28,19 +29,15 @@ setup: ## Install all dev tools (protoc plugins, goose, buf, etc.)
 	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@latest
 	go install github.com/pressly/goose/v3/cmd/goose@latest
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+	go install github.com/bufbuild/buf/cmd/buf@latest
 	@echo "✓ Dev tools installed"
 
 # ─── Proto codegen ────────────────────────────────────────────────────────────
 .PHONY: proto
 proto: ## Generate Go + gateway stubs from .proto files
 	mkdir -p $(GEN_DIR)
-	$(PROTOC) \
-		--proto_path=$(PROTO_DIR) \
-		--proto_path=$(shell go env GOPATH)/pkg/mod/github.com/grpc-ecosystem/grpc-gateway/v2@*/third_party/googleapis \
-		--go_out=$(GEN_DIR) --go_opt=paths=source_relative \
-		--go-grpc_out=$(GEN_DIR) --go-grpc_opt=paths=source_relative \
-		--grpc-gateway_out=$(GEN_DIR) --grpc-gateway_opt=paths=source_relative \
-		$(shell find $(PROTO_DIR) -name '*.proto')
+	PATH="$(GOPATH_BIN):$$PATH" $(BUF) dep update
+	PATH="$(GOPATH_BIN):$$PATH" $(BUF) generate
 	@echo "✓ Proto stubs generated in $(GEN_DIR)/"
 
 # ─── Build ────────────────────────────────────────────────────────────────────

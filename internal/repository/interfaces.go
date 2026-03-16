@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/your-org/openpay-smart-service/internal/domain"
+	"github.com/menesesghz/openpay-smart-service/internal/domain"
 )
 
 // ─── Tenant ──────────────────────────────────────────────────────────────────
@@ -68,12 +68,27 @@ type ListPaymentLinksOptions struct {
 
 // ─── Payment ─────────────────────────────────────────────────────────────────
 
+// PaymentFees carries the computed fee breakdown for settling a completed charge.
+// All values are in centavos (int64 minor units).
+type PaymentFees struct {
+	GrossAmount int64
+	OpenpayFee  int64
+	PlatformFee int64
+	NetAmount   int64
+}
+
 type PaymentRepository interface {
 	Create(ctx context.Context, p *domain.Payment) error
 	GetByID(ctx context.Context, tenantID, paymentID uuid.UUID) (*domain.Payment, error)
 	GetByOpenpayTransactionID(ctx context.Context, txID string) (*domain.Payment, error)
 	GetByIdempotencyKey(ctx context.Context, tenantID uuid.UUID, key string) (*domain.Payment, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.PaymentStatus, openpayErr ...string) error
+
+	// SettlePayment atomically marks a payment as completed and writes the full
+	// fee breakdown in a single UPDATE.  Called exclusively from the
+	// charge.succeeded webhook handler — never call UpdateStatus for settlements.
+	SettlePayment(ctx context.Context, id uuid.UUID, fees PaymentFees) error
+
 	List(ctx context.Context, opts ListPaymentsOptions) ([]*domain.Payment, string, error)
 
 	// Payout
@@ -83,18 +98,18 @@ type PaymentRepository interface {
 }
 
 type ListPaymentsOptions struct {
-	TenantID      uuid.UUID
-	MemberID      *uuid.UUID
-	Statuses      []string
-	Methods       []string
-	Currency      string
-	AmountMin     *int64
-	AmountMax     *int64
-	OrderID       string
-	From          *time.Time
-	To            *time.Time
-	PageSize      int
-	PageToken     string
+	TenantID  uuid.UUID
+	MemberID  *uuid.UUID
+	Statuses  []string
+	Methods   []string
+	Currency  string
+	AmountMin *int64
+	AmountMax *int64
+	OrderID   string
+	From      *time.Time
+	To        *time.Time
+	PageSize  int
+	PageToken string
 }
 
 // ─── Balance ─────────────────────────────────────────────────────────────────
@@ -105,6 +120,21 @@ type BalanceRepository interface {
 	GetMemberBalance(ctx context.Context, tenantID, memberID uuid.UUID, currency string) (*domain.Balance, error)
 	List(ctx context.Context, tenantID uuid.UUID, currency string, pageSize int, pageToken string) ([]*domain.Balance, string, error)
 	GetHistory(ctx context.Context, tenantID, memberID uuid.UUID, currency, granularity string, from, to time.Time) ([]*domain.BalanceSnapshot, error)
+
+	// AddPending increases the pending balance when a new charge is initiated.
+	// Called when a payment record is first created (status = pending / in_progress).
+	AddPending(ctx context.Context, tenantID uuid.UUID, amount int64, currency string) error
+
+	// CreditSettlement moves funds from pending to available after a charge.succeeded
+	// webhook is processed.  grossAmount is subtracted from pending; netAmount is
+	// added to available.  The difference (openpay_fee + platform_fee) is simply
+	// removed — it was never part of the tenant's balance.
+	// This must execute as a single atomic UPDATE to avoid race conditions.
+	CreditSettlement(ctx context.Context, tenantID uuid.UUID, grossAmount, netAmount int64, currency string) error
+
+	// DebitAvailable reduces the available balance when a payout is dispatched.
+	// Called by the DisbursementScheduler before calling POST /payouts on OpenPay.
+	DebitAvailable(ctx context.Context, tenantID uuid.UUID, amount int64, currency string) error
 }
 
 // ─── Webhook ──────────────────────────────────────────────────────────────────

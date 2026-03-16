@@ -1,0 +1,8 @@
+version: v2
+
+modules:
+  - path: proto
+
+# googleapis provides google/api/annotations.proto used by grpc-gateway HTTP bindings.
+deps:
+  - buf.build/googleapis/googleapis

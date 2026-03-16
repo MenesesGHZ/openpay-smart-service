@@ -7,8 +7,9 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/your-org/openpay-smart-service/internal/domain"
-	"github.com/your-org/openpay-smart-service/internal/repository"
+	"github.com/menesesghz/openpay-smart-service/internal/domain"
+	"github.com/menesesghz/openpay-smart-service/internal/repository"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
