@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	cfgPath = flag.String("config", "config.yaml", "path to config file")
+	cfgPath = flag.String("config", "", "path to config file (optional; defaults to env vars)")
 	version = "dev"
 )
 

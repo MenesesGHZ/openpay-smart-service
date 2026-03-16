@@ -111,7 +111,7 @@ func (s *SubscriptionService) CreatePlan(ctx context.Context, req *openpayv1.Cre
 	}
 
 	plan := &domain.Plan{
-		TenantID:         tc.TenantID,
+		TenantID:         tc.Tenant.ID,
 		OpenpayPlanID:    opPlan.ID,
 		Name:             req.Name,
 		Amount:           req.Amount.Amount,
@@ -143,7 +143,7 @@ func (s *SubscriptionService) GetPlan(ctx context.Context, req *openpayv1.GetPla
 		return nil, status.Error(codes.InvalidArgument, "invalid plan_id")
 	}
 
-	plan, err := s.plans.GetByID(ctx, tc.TenantID, planID)
+	plan, err := s.plans.GetByID(ctx, tc.Tenant.ID, planID)
 	if err != nil {
 		return nil, domainErrToStatus(err)
 	}
@@ -158,7 +158,7 @@ func (s *SubscriptionService) ListPlans(ctx context.Context, req *openpayv1.List
 	}
 
 	plans, nextToken, err := s.plans.List(ctx, repository.ListPlansOptions{
-		TenantID:   tc.TenantID,
+		TenantID:   tc.Tenant.ID,
 		ActiveOnly: req.ActiveOnly,
 		PageSize:   int(req.PageSize),
 		PageToken:  req.PageToken,
@@ -189,7 +189,7 @@ func (s *SubscriptionService) DeactivatePlan(ctx context.Context, req *openpayv1
 		return nil, status.Error(codes.InvalidArgument, "invalid plan_id")
 	}
 
-	plan, err := s.plans.GetByID(ctx, tc.TenantID, planID)
+	plan, err := s.plans.GetByID(ctx, tc.Tenant.ID, planID)
 	if err != nil {
 		return nil, domainErrToStatus(err)
 	}
@@ -202,7 +202,7 @@ func (s *SubscriptionService) DeactivatePlan(ctx context.Context, req *openpayv1
 		}
 	}
 
-	if err := s.plans.Deactivate(ctx, tc.TenantID, planID); err != nil {
+	if err := s.plans.Deactivate(ctx, tc.Tenant.ID, planID); err != nil {
 		return nil, status.Errorf(codes.Internal, "deactivate plan: %v", err)
 	}
 	return &openpayv1.DeactivatePlanResponse{}, nil
@@ -237,7 +237,7 @@ func (s *SubscriptionService) CreateSubscription(ctx context.Context, req *openp
 	}
 
 	// Validate member belongs to this tenant.
-	member, err := s.members.GetByID(ctx, tc.TenantID, memberID)
+	member, err := s.members.GetByID(ctx, tc.Tenant.ID, memberID)
 	if err != nil {
 		return nil, domainErrToStatus(err)
 	}
@@ -246,7 +246,7 @@ func (s *SubscriptionService) CreateSubscription(ctx context.Context, req *openp
 	}
 
 	// Validate plan belongs to this tenant.
-	plan, err := s.plans.GetByID(ctx, tc.TenantID, planID)
+	plan, err := s.plans.GetByID(ctx, tc.Tenant.ID, planID)
 	if err != nil {
 		return nil, domainErrToStatus(err)
 	}
@@ -273,7 +273,7 @@ func (s *SubscriptionService) CreateSubscription(ctx context.Context, req *openp
 	}
 
 	sub := &domain.Subscription{
-		TenantID:     tc.TenantID,
+		TenantID:     tc.Tenant.ID,
 		MemberID:     memberID,
 		PlanID:       planID,
 		OpenpaySubID: opSub.ID,
@@ -307,7 +307,7 @@ func (s *SubscriptionService) GetSubscription(ctx context.Context, req *openpayv
 		return nil, status.Error(codes.InvalidArgument, "invalid subscription_id")
 	}
 
-	sub, err := s.subscriptions.GetByID(ctx, tc.TenantID, subID)
+	sub, err := s.subscriptions.GetByID(ctx, tc.Tenant.ID, subID)
 	if err != nil {
 		return nil, domainErrToStatus(err)
 	}
@@ -323,7 +323,7 @@ func (s *SubscriptionService) ListSubscriptions(ctx context.Context, req *openpa
 	}
 
 	opts := repository.ListSubscriptionsOptions{
-		TenantID:  tc.TenantID,
+		TenantID:  tc.Tenant.ID,
 		PageSize:  int(req.PageSize),
 		PageToken: req.PageToken,
 	}
@@ -370,7 +370,7 @@ func (s *SubscriptionService) CancelSubscription(ctx context.Context, req *openp
 		return nil, status.Error(codes.InvalidArgument, "invalid subscription_id")
 	}
 
-	sub, err := s.subscriptions.GetByID(ctx, tc.TenantID, subID)
+	sub, err := s.subscriptions.GetByID(ctx, tc.Tenant.ID, subID)
 	if err != nil {
 		return nil, domainErrToStatus(err)
 	}
@@ -379,7 +379,7 @@ func (s *SubscriptionService) CancelSubscription(ctx context.Context, req *openp
 	}
 
 	// Fetch member to get the OpenPay customer ID.
-	member, err := s.members.GetByID(ctx, tc.TenantID, sub.MemberID)
+	member, err := s.members.GetByID(ctx, tc.Tenant.ID, sub.MemberID)
 	if err != nil {
 		return nil, domainErrToStatus(err)
 	}
@@ -413,12 +413,12 @@ func (s *SubscriptionService) ListSubscriptionPayments(ctx context.Context, req 
 	}
 
 	// Verify the subscription belongs to this tenant.
-	if _, err := s.subscriptions.GetByID(ctx, tc.TenantID, subID); err != nil {
+	if _, err := s.subscriptions.GetByID(ctx, tc.Tenant.ID, subID); err != nil {
 		return nil, domainErrToStatus(err)
 	}
 
 	payments, nextToken, err := s.payments.List(ctx, repository.ListPaymentsOptions{
-		TenantID:       tc.TenantID,
+		TenantID:       tc.Tenant.ID,
 		SubscriptionID: &subID,
 		PageSize:       int(req.PageSize),
 		PageToken:      req.PageToken,

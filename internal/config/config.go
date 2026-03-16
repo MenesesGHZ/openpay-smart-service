@@ -183,6 +183,21 @@ func Load(cfgPath string) (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
+	// Explicitly bind keys that have no default so AutomaticEnv picks them up.
+	for _, key := range []string{
+		"openpay.merchant_id",
+		"openpay.private_key",
+		"openpay.public_key",
+		"openpay.webhook_ingress_secret",
+		"database.dsn",
+		"redis.addr",
+		"redis.password",
+		"kafka.brokers",
+		"encryption.aes_key_hex",
+	} {
+		_ = v.BindEnv(key)
+	}
+
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)

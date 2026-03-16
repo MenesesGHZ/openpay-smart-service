@@ -14,7 +14,7 @@ import (
 	"github.com/menesesghz/openpay-smart-service/internal/config"
 )
 
-var cfgPath = flag.String("config", "config.yaml", "path to config file")
+var cfgPath = flag.String("config", "", "path to config file (optional; defaults to env vars)")
 
 func main() {
 	flag.Parse()

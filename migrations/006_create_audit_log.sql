@@ -4,14 +4,15 @@
 -- audit_log is append-only; no UPDATE or DELETE is permitted on this table.
 -- Enforce via a trigger or application-level policy.
 CREATE TABLE audit_log (
-    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    id            UUID        NOT NULL DEFAULT gen_random_uuid(),
     tenant_id     UUID        NOT NULL,   -- no FK — log survives tenant deletion
     actor         TEXT        NOT NULL,   -- API key prefix or "system"
     operation     TEXT        NOT NULL,   -- e.g. "CreateMember", "UpdatePaymentStatus"
     resource_type TEXT        NOT NULL,   -- e.g. "Member", "Payment"
     resource_id   TEXT        NOT NULL,
     payload       JSONB,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
 -- Monthly partitions — create new ones in advance via cron or migration
