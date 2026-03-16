@@ -1,0 +1,20 @@
+# Version control
+.git
+.gitignore
+
+# Proto-generated stubs are regenerated inside the builder stage.
+# Excluding gen/ here ensures COPY . . never overwrites the freshly generated files.
+gen/
+
+# Local secrets / env overrides — never bake these into the image
+.env
+*.local.env
+
+# IDE and OS noise
+.idea/
+.vscode/
+*.DS_Store
+
+# Local test artefacts
+coverage.out
+*.test

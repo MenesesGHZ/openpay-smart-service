@@ -98,16 +98,64 @@ type PaymentRepository interface {
 }
 
 type ListPaymentsOptions struct {
+	TenantID       uuid.UUID
+	MemberID       *uuid.UUID
+	SubscriptionID *uuid.UUID // filter to a specific subscription's payments
+	Statuses       []string
+	Methods        []string
+	Currency       string
+	AmountMin      *int64
+	AmountMax      *int64
+	OrderID        string
+	From           *time.Time
+	To             *time.Time
+	PageSize       int
+	PageToken      string
+}
+
+// ─── Plan ────────────────────────────────────────────────────────────────────
+
+type PlanRepository interface {
+	Create(ctx context.Context, p *domain.Plan) error
+	GetByID(ctx context.Context, tenantID, planID uuid.UUID) (*domain.Plan, error)
+	GetByOpenpayPlanID(ctx context.Context, openpayPlanID string) (*domain.Plan, error)
+	List(ctx context.Context, opts ListPlansOptions) ([]*domain.Plan, string, error)
+	Deactivate(ctx context.Context, tenantID, planID uuid.UUID) error
+}
+
+type ListPlansOptions struct {
+	TenantID   uuid.UUID
+	ActiveOnly bool
+	PageSize   int
+	PageToken  string
+}
+
+// ─── Subscription ─────────────────────────────────────────────────────────────
+
+type SubscriptionRepository interface {
+	Create(ctx context.Context, s *domain.Subscription) error
+	GetByID(ctx context.Context, tenantID, subID uuid.UUID) (*domain.Subscription, error)
+	GetByOpenpaySubID(ctx context.Context, openpaySubID string) (*domain.Subscription, error)
+	List(ctx context.Context, opts ListSubscriptionsOptions) ([]*domain.Subscription, string, error)
+	// UpdateStatus sets the subscription status and bumps updated_at.
+	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.SubscriptionStatus) error
+	// RecordCharge updates last_charge_id and resets failed_charge_count to 0.
+	// Called when subscription.charge.succeeded is received.
+	RecordCharge(ctx context.Context, id uuid.UUID, chargePaymentID uuid.UUID) error
+	// IncrementFailedCharge bumps failed_charge_count and, if it reaches the plan's
+	// retry_times, transitions status to the plan's status_on_retry_end.
+	// Called when subscription.charge.failed is received.
+	IncrementFailedCharge(ctx context.Context, id uuid.UUID) error
+	// SetCancelAtPeriodEnd marks cancel_at_period_end = true.
+	// The subscription remains active until period_end_date, then becomes cancelled.
+	SetCancelAtPeriodEnd(ctx context.Context, id uuid.UUID) error
+}
+
+type ListSubscriptionsOptions struct {
 	TenantID  uuid.UUID
 	MemberID  *uuid.UUID
+	PlanID    *uuid.UUID
 	Statuses  []string
-	Methods   []string
-	Currency  string
-	AmountMin *int64
-	AmountMax *int64
-	OrderID   string
-	From      *time.Time
-	To        *time.Time
 	PageSize  int
 	PageToken string
 }

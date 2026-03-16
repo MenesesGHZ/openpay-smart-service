@@ -32,7 +32,7 @@ func NewPaymentRepo(db *pgxpool.Pool) *PaymentRepo {
 func (r *PaymentRepo) Create(ctx context.Context, p *domain.Payment) error {
 	const q = `
 		INSERT INTO payments (
-			id, tenant_id, member_id, link_id,
+			id, tenant_id, member_id, link_id, subscription_id,
 			openpay_transaction_id, order_id, idempotency_key,
 			gross_amount, openpay_fee, platform_fee, net_amount,
 			currency, method, status, description,
@@ -40,17 +40,17 @@ func (r *PaymentRepo) Create(ctx context.Context, p *domain.Payment) error {
 			bank_clabe, bank_name, bank_reference, bank_agreement,
 			metadata, created_at, updated_at
 		) VALUES (
-			$1,  $2,  $3,  $4,
-			$5,  $6,  $7,
-			$8,  $9,  $10, $11,
-			$12, $13, $14, $15,
-			$16, $17,
-			$18, $19, $20, $21,
-			$22, $23, $24
+			$1,  $2,  $3,  $4,  $5,
+			$6,  $7,  $8,
+			$9,  $10, $11, $12,
+			$13, $14, $15, $16,
+			$17, $18,
+			$19, $20, $21, $22,
+			$23, $24, $25
 		)`
 
 	_, err := r.db.Exec(ctx, q,
-		p.ID, p.TenantID, p.MemberID, p.LinkID,
+		p.ID, p.TenantID, p.MemberID, p.LinkID, p.SubscriptionID,
 		p.OpenpayTransactionID, nilIfEmpty(p.OrderID), p.IdempotencyKey,
 		p.GrossAmount, p.OpenpayFee, p.PlatformFee, p.NetAmount,
 		p.Currency, string(p.Method), string(p.Status), nilIfEmpty(p.Description),
@@ -158,6 +158,11 @@ func (r *PaymentRepo) List(ctx context.Context, opts repository.ListPaymentsOpti
 	if opts.MemberID != nil {
 		where += fmt.Sprintf(" AND member_id = $%d", idx)
 		args = append(args, *opts.MemberID)
+		idx++
+	}
+	if opts.SubscriptionID != nil {
+		where += fmt.Sprintf(" AND subscription_id = $%d", idx)
+		args = append(args, *opts.SubscriptionID)
 		idx++
 	}
 	if len(opts.Statuses) > 0 {
@@ -313,7 +318,7 @@ func (r *PaymentRepo) UpdatePayoutStatus(ctx context.Context, id uuid.UUID, stat
 // paymentCols is the canonical SELECT column list — order must match the Scan
 // calls in scanPayment and scanPaymentRow.
 const paymentCols = `
-	id, tenant_id, member_id, link_id,
+	id, tenant_id, member_id, link_id, subscription_id,
 	openpay_transaction_id, order_id, idempotency_key,
 	gross_amount, openpay_fee, platform_fee, net_amount,
 	currency, method, status, description,
@@ -323,13 +328,13 @@ const paymentCols = `
 
 func scanPayment(row pgx.Row) (*domain.Payment, error) {
 	var p domain.Payment
-	var linkID *uuid.UUID
+	var linkID, subscriptionID *uuid.UUID
 	var orderID, description, errMsg, errCode *string
 	var bankCLABE, bankName, bankRef, bankAgr *string
 	var metadata []byte
 
 	err := row.Scan(
-		&p.ID, &p.TenantID, &p.MemberID, &linkID,
+		&p.ID, &p.TenantID, &p.MemberID, &linkID, &subscriptionID,
 		&p.OpenpayTransactionID, &orderID, &p.IdempotencyKey,
 		&p.GrossAmount, &p.OpenpayFee, &p.PlatformFee, &p.NetAmount,
 		&p.Currency, &p.Method, &p.Status, &description,
@@ -343,19 +348,19 @@ func scanPayment(row pgx.Row) (*domain.Payment, error) {
 		}
 		return nil, fmt.Errorf("scan payment: %w", err)
 	}
-	applyNullable(&p, linkID, orderID, description, errMsg, errCode, bankCLABE, bankName, bankRef, bankAgr, metadata)
+	applyNullable(&p, linkID, subscriptionID, orderID, description, errMsg, errCode, bankCLABE, bankName, bankRef, bankAgr, metadata)
 	return &p, nil
 }
 
 func scanPaymentRow(rows pgx.Rows) (*domain.Payment, error) {
 	var p domain.Payment
-	var linkID *uuid.UUID
+	var linkID, subscriptionID *uuid.UUID
 	var orderID, description, errMsg, errCode *string
 	var bankCLABE, bankName, bankRef, bankAgr *string
 	var metadata []byte
 
 	err := rows.Scan(
-		&p.ID, &p.TenantID, &p.MemberID, &linkID,
+		&p.ID, &p.TenantID, &p.MemberID, &linkID, &subscriptionID,
 		&p.OpenpayTransactionID, &orderID, &p.IdempotencyKey,
 		&p.GrossAmount, &p.OpenpayFee, &p.PlatformFee, &p.NetAmount,
 		&p.Currency, &p.Method, &p.Status, &description,
@@ -366,18 +371,19 @@ func scanPaymentRow(rows pgx.Rows) (*domain.Payment, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scan payment row: %w", err)
 	}
-	applyNullable(&p, linkID, orderID, description, errMsg, errCode, bankCLABE, bankName, bankRef, bankAgr, metadata)
+	applyNullable(&p, linkID, subscriptionID, orderID, description, errMsg, errCode, bankCLABE, bankName, bankRef, bankAgr, metadata)
 	return &p, nil
 }
 
 func applyNullable(
 	p *domain.Payment,
-	linkID *uuid.UUID,
+	linkID, subscriptionID *uuid.UUID,
 	orderID, description, errMsg, errCode *string,
 	bankCLABE, bankName, bankRef, bankAgr *string,
 	metadata []byte,
 ) {
 	p.LinkID = linkID
+	p.SubscriptionID = subscriptionID
 	if orderID != nil {
 		p.OrderID = *orderID
 	}

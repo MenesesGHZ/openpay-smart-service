@@ -46,6 +46,10 @@ type Charge struct {
 	OrderID         string                `json:"order_id,omitempty"`
 	ErrorMessage    string                `json:"error_message,omitempty"`
 	CustomerID      string                `json:"customer_id,omitempty"`
+	// SubscriptionID is set on charges created automatically by OpenPay for recurring billing.
+	// It identifies which subscription triggered this charge; present on
+	// subscription.charge.succeeded and subscription.charge.failed events.
+	SubscriptionID  string                `json:"subscription_id,omitempty"`
 	Authorization   string                `json:"authorization,omitempty"`
 	Method          string                `json:"method"` // card | bank_account | store
 	Card            *ChargeCard           `json:"card,omitempty"`

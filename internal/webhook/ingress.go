@@ -5,12 +5,14 @@ package webhook
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/menesesghz/openpay-smart-service/internal/domain"
@@ -24,6 +26,7 @@ import (
 //   - The gRPC StreamPaymentEvents RPC pushes it to connected subscribers
 type EventPublisher interface {
 	PublishPaymentEvent(ctx context.Context, evt domain.PaymentEvent) error
+	PublishSubscriptionEvent(ctx context.Context, evt domain.SubscriptionEvent) error
 }
 
 // IngressHandler is the HTTP handler for POST /webhooks/openpay.
@@ -40,12 +43,13 @@ type EventPublisher interface {
 //
 //	mux.Handle("/webhooks/openpay", ingressHandler)
 type IngressHandler struct {
-	secret    string // OpenPay webhook shared secret (cfg.OpenPay.WebhookIngressSecret)
-	payments  repository.PaymentRepository
-	tenants   repository.TenantRepository
-	balances  repository.BalanceRepository
-	publisher EventPublisher
-	log       zerolog.Logger
+	secret        string // OpenPay webhook shared secret (cfg.OpenPay.WebhookIngressSecret)
+	payments      repository.PaymentRepository
+	tenants       repository.TenantRepository
+	balances      repository.BalanceRepository
+	subscriptions repository.SubscriptionRepository
+	publisher     EventPublisher
+	log           zerolog.Logger
 }
 
 // NewIngressHandler constructs an IngressHandler.
@@ -56,16 +60,18 @@ func NewIngressHandler(
 	payments repository.PaymentRepository,
 	tenants repository.TenantRepository,
 	balances repository.BalanceRepository,
+	subscriptions repository.SubscriptionRepository,
 	publisher EventPublisher,
 	log zerolog.Logger,
 ) *IngressHandler {
 	return &IngressHandler{
-		secret:    secret,
-		payments:  payments,
-		tenants:   tenants,
-		balances:  balances,
-		publisher: publisher,
-		log:       log.With().Str("component", "webhook_ingress").Logger(),
+		secret:        secret,
+		payments:      payments,
+		tenants:       tenants,
+		balances:      balances,
+		subscriptions: subscriptions,
+		publisher:     publisher,
+		log:           log.With().Str("component", "webhook_ingress").Logger(),
 	}
 }
 
@@ -144,6 +150,31 @@ func (h *IngressHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	case "chargeback.accepted":
 		handlerErr = h.handleChargeStatus(ctx, event, domain.PaymentStatusChargeback, log)
+
+	// ── Subscription events ─────────────────────────────────────────────────
+	// subscription.charge.succeeded fires when OpenPay auto-charges a member's
+	// card for a recurring subscription payment. The transaction payload is a
+	// Charge object with a subscription_id field set.
+	case "subscription.charge.succeeded":
+		handlerErr = h.handleSubscriptionChargeSucceeded(ctx, event, log)
+
+	// subscription.charge.failed fires when the automatic recurring charge fails
+	// (e.g. card declined). OpenPay will retry according to the plan's retry_times.
+	// After exhausting retries it fires subscription.cancelled or subscription.deactivated.
+	case "subscription.charge.failed":
+		handlerErr = h.handleSubscriptionChargeFailed(ctx, event, log)
+
+	// subscription.cancelled fires when a subscription has been cancelled — either
+	// explicitly (DELETE /subscriptions/{id}) or by OpenPay after retries are
+	// exhausted and status_on_retry_end = "cancelled".
+	case "subscription.cancelled":
+		handlerErr = h.handleSubscriptionStatusChange(ctx, event, domain.SubscriptionStatusCancelled, log)
+
+	// subscription.deactivated fires when retries are exhausted and
+	// status_on_retry_end = "unpaid". The subscription is deactivated but not
+	// fully cancelled; it can be reactivated manually via the OpenPay dashboard.
+	case "subscription.deactivated":
+		handlerErr = h.handleSubscriptionStatusChange(ctx, event, domain.SubscriptionStatusUnpaid, log)
 
 	default:
 		// Unknown event type — log and ack (return 200) so OpenPay doesn't retry.
@@ -322,6 +353,272 @@ func parseCharge(event domain.OpenPayEvent) (*openpay.Charge, error) {
 		return nil, fmt.Errorf("charge has empty ID")
 	}
 	return &charge, nil
+}
+
+// ─── subscription.charge.succeeded ────────────────────────────────────────────
+
+// handleSubscriptionChargeSucceeded processes an automatic recurring charge that
+// completed successfully.
+//
+// Because OpenPay initiates the charge (not us), there may be no pre-existing
+// Payment record.  The handler tries to find one by openpay_transaction_id; if
+// not found it creates a new Payment linked to the subscription, then settles it
+// exactly as handleChargeSucceeded does for one-time charges.
+func (h *IngressHandler) handleSubscriptionChargeSucceeded(ctx context.Context, event domain.OpenPayEvent, log zerolog.Logger) error {
+	charge, err := parseCharge(event)
+	if err != nil {
+		return fmt.Errorf("parse charge: %w", err)
+	}
+	if charge.SubscriptionID == "" {
+		return fmt.Errorf("subscription.charge.succeeded: charge %q has no subscription_id", charge.ID)
+	}
+
+	log = log.With().Str("openpay_tx_id", charge.ID).Str("openpay_sub_id", charge.SubscriptionID).Logger()
+
+	// Look up our Subscription record.
+	sub, err := h.subscriptions.GetByOpenpaySubID(ctx, charge.SubscriptionID)
+	if err != nil {
+		return fmt.Errorf("get subscription by openpay id %s: %w", charge.SubscriptionID, err)
+	}
+
+	// Fetch tenant for PlatformFeeBPS.
+	tenant, err := h.tenants.GetByID(ctx, sub.TenantID)
+	if err != nil {
+		return fmt.Errorf("get tenant %s: %w", sub.TenantID, err)
+	}
+
+	// Try to find a pre-existing Payment record.  If none, create one now so
+	// we have a local record of every billing cycle.
+	payment, err := h.payments.GetByOpenpayTransactionID(ctx, charge.ID)
+	if err != nil {
+		if !isNotFound(err) {
+			return fmt.Errorf("get payment by openpay tx %s: %w", charge.ID, err)
+		}
+		// No pre-existing record — create one for this billing cycle.
+		grossCentavos := floatToCentavos(charge.Amount)
+		now := time.Now()
+		payment = &domain.Payment{
+			ID:                   uuid.New(),
+			TenantID:             sub.TenantID,
+			MemberID:             sub.MemberID,
+			SubscriptionID:       &sub.ID,
+			OpenpayTransactionID: charge.ID,
+			IdempotencyKey:       "sub:" + charge.ID, // stable for this cycle
+			GrossAmount:          grossCentavos,
+			Currency:             charge.Currency,
+			Method:               domain.PaymentMethodCard,
+			Status:               domain.PaymentStatusInProgress,
+			Description:          charge.Description,
+			CreatedAt:            now,
+			UpdatedAt:            now,
+		}
+		if err := h.payments.Create(ctx, payment); err != nil {
+			return fmt.Errorf("create subscription payment: %w", err)
+		}
+		log.Info().Str("payment_id", payment.ID.String()).Msg("created payment record for subscription charge")
+	}
+
+	// Compute fee split.
+	grossCentavos := floatToCentavos(charge.Amount)
+	var openpayFeeCentavos int64
+	if charge.FeeDetails != nil {
+		openpayFeeCentavos = floatToCentavos(charge.FeeDetails.Amount)
+	}
+	platformFee, netAmount := domain.NetAmountForCharge(grossCentavos, openpayFeeCentavos, tenant.PlatformFeeBPS)
+
+	fees := repository.PaymentFees{
+		GrossAmount: grossCentavos,
+		OpenpayFee:  openpayFeeCentavos,
+		PlatformFee: platformFee,
+		NetAmount:   netAmount,
+	}
+
+	log.Info().
+		Int64("gross_centavos", grossCentavos).
+		Int64("net_amount", netAmount).
+		Msg("settling subscription charge")
+
+	// Settle payment.
+	if err := h.payments.SettlePayment(ctx, payment.ID, fees); err != nil {
+		return fmt.Errorf("settle subscription payment %s: %w", payment.ID, err)
+	}
+
+	// Credit tenant balance.
+	if err := h.balances.CreditSettlement(ctx, sub.TenantID, grossCentavos, netAmount, payment.Currency); err != nil {
+		log.Error().Err(err).
+			Str("payment_id", payment.ID.String()).
+			Msg("CRITICAL: subscription payment settled but balance credit failed")
+	}
+
+	// Update subscription: reset failure counter, set status to active.
+	if err := h.subscriptions.RecordCharge(ctx, sub.ID, payment.ID); err != nil {
+		log.Error().Err(err).Msg("failed to record charge on subscription")
+	}
+
+	// Publish events.
+	payEvt := domain.PaymentEvent{
+		EventID:    event.EventDate + ":" + charge.ID,
+		PaymentID:  payment.ID.String(),
+		TenantID:   sub.TenantID.String(),
+		MemberID:   sub.MemberID.String(),
+		Status:     domain.PaymentStatusCompleted,
+		EventType:  event.Type,
+		OccurredAt: time.Now(),
+	}
+	if err := h.publisher.PublishPaymentEvent(ctx, payEvt); err != nil {
+		log.Warn().Err(err).Msg("failed to publish payment event")
+	}
+
+	subEvt := domain.SubscriptionEvent{
+		EventID:        event.EventDate + ":" + charge.SubscriptionID,
+		SubscriptionID: sub.ID.String(),
+		TenantID:       sub.TenantID.String(),
+		MemberID:       sub.MemberID.String(),
+		PlanID:         sub.PlanID.String(),
+		Status:         domain.SubscriptionStatusActive,
+		EventType:      event.Type,
+		PaymentID:      payment.ID.String(),
+		OccurredAt:     time.Now(),
+	}
+	if err := h.publisher.PublishSubscriptionEvent(ctx, subEvt); err != nil {
+		log.Warn().Err(err).Msg("failed to publish subscription event")
+	}
+
+	return nil
+}
+
+// ─── subscription.charge.failed ────────────────────────────────────────────────
+
+func (h *IngressHandler) handleSubscriptionChargeFailed(ctx context.Context, event domain.OpenPayEvent, log zerolog.Logger) error {
+	charge, err := parseCharge(event)
+	if err != nil {
+		return fmt.Errorf("parse charge: %w", err)
+	}
+	if charge.SubscriptionID == "" {
+		return fmt.Errorf("subscription.charge.failed: charge %q has no subscription_id", charge.ID)
+	}
+
+	log = log.With().Str("openpay_tx_id", charge.ID).Str("openpay_sub_id", charge.SubscriptionID).Logger()
+
+	sub, err := h.subscriptions.GetByOpenpaySubID(ctx, charge.SubscriptionID)
+	if err != nil {
+		return fmt.Errorf("get subscription %s: %w", charge.SubscriptionID, err)
+	}
+
+	// Mark subscription as past_due and bump failure counter.
+	if err := h.subscriptions.IncrementFailedCharge(ctx, sub.ID); err != nil {
+		return fmt.Errorf("increment failed charge for sub %s: %w", sub.ID, err)
+	}
+
+	// If a payment record exists, mark it failed too.
+	payment, err := h.payments.GetByOpenpayTransactionID(ctx, charge.ID)
+	if err == nil {
+		_ = h.payments.UpdateStatus(ctx, payment.ID, domain.PaymentStatusFailed, charge.ErrorMessage)
+		// Release any pending balance hold.
+		if payment.GrossAmount > 0 {
+			if dbErr := h.balances.CreditSettlement(ctx, sub.TenantID, payment.GrossAmount, 0, payment.Currency); dbErr != nil {
+				log.Error().Err(dbErr).Msg("failed to release pending balance on subscription charge failure")
+			}
+		}
+	}
+
+	// Publish subscription event.
+	subEvt := domain.SubscriptionEvent{
+		EventID:        event.EventDate + ":" + charge.SubscriptionID,
+		SubscriptionID: sub.ID.String(),
+		TenantID:       sub.TenantID.String(),
+		MemberID:       sub.MemberID.String(),
+		PlanID:         sub.PlanID.String(),
+		Status:         domain.SubscriptionStatusPastDue,
+		EventType:      event.Type,
+		OccurredAt:     time.Now(),
+	}
+	if err := h.publisher.PublishSubscriptionEvent(ctx, subEvt); err != nil {
+		log.Warn().Err(err).Msg("failed to publish subscription event")
+	}
+
+	log.Warn().Int("failure_count", sub.FailedChargeCount+1).Msg("subscription charge failed")
+	return nil
+}
+
+// ─── subscription.cancelled / subscription.deactivated ───────────────────────
+
+func (h *IngressHandler) handleSubscriptionStatusChange(
+	ctx context.Context,
+	event domain.OpenPayEvent,
+	status domain.SubscriptionStatus,
+	log zerolog.Logger,
+) error {
+	// For subscription.cancelled / subscription.deactivated the transaction
+	// payload may be a subscription object rather than a charge.  We read the
+	// openpay subscription ID from the transaction JSON directly.
+	openpaySubID, err := parseSubscriptionID(event)
+	if err != nil {
+		return fmt.Errorf("parse subscription id from event: %w", err)
+	}
+
+	log = log.With().Str("openpay_sub_id", openpaySubID).Logger()
+
+	sub, err := h.subscriptions.GetByOpenpaySubID(ctx, openpaySubID)
+	if err != nil {
+		return fmt.Errorf("get subscription %s: %w", openpaySubID, err)
+	}
+
+	if err := h.subscriptions.UpdateStatus(ctx, sub.ID, status); err != nil {
+		return fmt.Errorf("update subscription status to %s: %w", status, err)
+	}
+
+	subEvt := domain.SubscriptionEvent{
+		EventID:        event.EventDate + ":" + openpaySubID,
+		SubscriptionID: sub.ID.String(),
+		TenantID:       sub.TenantID.String(),
+		MemberID:       sub.MemberID.String(),
+		PlanID:         sub.PlanID.String(),
+		Status:         status,
+		EventType:      event.Type,
+		OccurredAt:     time.Now(),
+	}
+	if err := h.publisher.PublishSubscriptionEvent(ctx, subEvt); err != nil {
+		log.Warn().Err(err).Msg("failed to publish subscription event")
+	}
+
+	log.Info().Str("status", string(status)).Msg("subscription status updated")
+	return nil
+}
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+// parseSubscriptionID extracts the OpenPay subscription ID from the event's
+// transaction payload.  For subscription.cancelled / subscription.deactivated,
+// OpenPay sends the subscription object itself, which has a top-level "id" field.
+// We fall back to reading the "subscription_id" field in case it is embedded
+// inside a charge object.
+func parseSubscriptionID(event domain.OpenPayEvent) (string, error) {
+	if event.Transaction == nil {
+		return "", fmt.Errorf("event %q has no transaction payload", event.Type)
+	}
+	// Decode into a generic map so we can read either "id" or "subscription_id".
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(event.Transaction, &raw); err != nil {
+		return "", fmt.Errorf("unmarshal transaction: %w", err)
+	}
+
+	// OpenPay subscription objects have a top-level "id" field.
+	// Charge objects embedded in subscription events have "subscription_id".
+	for _, key := range []string{"subscription_id", "id"} {
+		if v, ok := raw[key]; ok {
+			var s string
+			if err := json.Unmarshal(v, &s); err == nil && s != "" {
+				return s, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("could not find subscription id in transaction payload")
+}
+
+// isNotFound returns true when an error wraps domain.ErrNotFound.
+func isNotFound(err error) bool {
+	return errors.Is(err, domain.ErrNotFound)
 }
 
 // floatToCentavos converts an OpenPay float64 peso amount to int64 centavos.

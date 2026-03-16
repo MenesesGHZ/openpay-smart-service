@@ -2,7 +2,7 @@ version: "3.9"
 
 # ─── openpay-smart-service local dev stack ───────────────────────────────────
 # Usage:
-#   docker compose up -d          # start all services
+#   docker compose up -d          # start all services (runs migrations first)
 #   docker compose logs -f server # tail service logs
 #   docker compose down -v        # tear down + remove volumes
 
@@ -30,6 +30,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   # ── Kafka worker (webhook dispatcher + disbursement scheduler) ──────────────
@@ -44,7 +46,14 @@ services:
       OPENPAY_REDIS_ADDR: "redis:6379"
       OPENPAY_KAFKA_BROKERS: "kafka:9092"
     depends_on:
-      - server
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   # ── PostgreSQL ───────────────────────────────────────────────────────────────
@@ -133,7 +142,9 @@ services:
     profiles:
       - tools
 
-  # ── Migration runner (one-off) ───────────────────────────────────────────────
+  # ── Database migrations (runs once on startup, then exits) ───────────────────
+  # server and worker wait for this with condition: service_completed_successfully
+  # so neither ever starts before the schema is ready.
   migrate:
     build:
       context: .
@@ -145,8 +156,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    profiles:
-      - migrate
 
 volumes:
   postgres_data:

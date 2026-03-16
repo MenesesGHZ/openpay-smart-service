@@ -63,6 +63,23 @@ enum PaymentLinkStatus {
   PAYMENT_LINK_STATUS_CANCELLED   = 4;
 }
 
+enum RepeatUnit {
+  REPEAT_UNIT_UNSPECIFIED = 0;
+  REPEAT_UNIT_WEEK        = 1;
+  REPEAT_UNIT_MONTH       = 2;
+  REPEAT_UNIT_YEAR        = 3;
+}
+
+enum SubscriptionStatus {
+  SUBSCRIPTION_STATUS_UNSPECIFIED = 0;
+  SUBSCRIPTION_STATUS_TRIAL       = 1;
+  SUBSCRIPTION_STATUS_ACTIVE      = 2;
+  SUBSCRIPTION_STATUS_PAST_DUE    = 3;
+  SUBSCRIPTION_STATUS_UNPAID      = 4;
+  SUBSCRIPTION_STATUS_CANCELLED   = 5;
+  SUBSCRIPTION_STATUS_EXPIRED     = 6;
+}
+
 // ─── Shared messages ─────────────────────────────────────────────────────────
 
 // Money represents an amount in a specific currency (always in minor units, e.g. centavos).

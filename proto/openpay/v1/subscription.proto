@@ -1,0 +1,222 @@
+syntax = "proto3";
+
+package openpay.v1;
+
+option go_package = "github.com/menesesghz/openpay-smart-service/gen/openpay/v1;openpayv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+import "openpay/v1/common.proto";
+import "openpay/v1/payment.proto";
+
+// ─── Service ─────────────────────────────────────────────────────────────────
+
+service SubscriptionService {
+  // ── Plan management ───────────────────────────────────────────────────────
+  // CreatePlan registers a new recurring billing plan under this tenant.
+  // It calls POST /plans on OpenPay and persists the plan locally.
+  rpc CreatePlan (CreatePlanRequest) returns (CreatePlanResponse) {
+    option (google.api.http) = { post: "/v1/plans" body: "*" };
+  }
+
+  rpc GetPlan (GetPlanRequest) returns (GetPlanResponse) {
+    option (google.api.http) = { get: "/v1/plans/{plan_id}" };
+  }
+
+  rpc ListPlans (ListPlansRequest) returns (ListPlansResponse) {
+    option (google.api.http) = { get: "/v1/plans" };
+  }
+
+  // DeactivatePlan marks the plan inactive locally and deletes it on OpenPay.
+  // Existing active subscriptions continue their current period but are not renewed.
+  rpc DeactivatePlan (DeactivatePlanRequest) returns (DeactivatePlanResponse) {
+    option (google.api.http) = { delete: "/v1/plans/{plan_id}" };
+  }
+
+  // ── Subscription management ───────────────────────────────────────────────
+  // CreateSubscription subscribes a member to a plan using a stored card.
+  // OpenPay will automatically charge the card on each billing cycle.
+  rpc CreateSubscription (CreateSubscriptionRequest) returns (CreateSubscriptionResponse) {
+    option (google.api.http) = { post: "/v1/subscriptions" body: "*" };
+  }
+
+  rpc GetSubscription (GetSubscriptionRequest) returns (GetSubscriptionResponse) {
+    option (google.api.http) = { get: "/v1/subscriptions/{subscription_id}" };
+  }
+
+  // ListSubscriptions returns subscriptions scoped to the authenticated tenant.
+  // Filter by member_id or plan_id to narrow results.
+  rpc ListSubscriptions (ListSubscriptionsRequest) returns (ListSubscriptionsResponse) {
+    option (google.api.http) = { get: "/v1/subscriptions" };
+  }
+
+  // CancelSubscription cancels a subscription at the end of the current billing
+  // period. The member retains access until period_end_date.
+  rpc CancelSubscription (CancelSubscriptionRequest) returns (CancelSubscriptionResponse) {
+    option (google.api.http) = { post: "/v1/subscriptions/{subscription_id}/cancel" body: "*" };
+  }
+
+  // ListSubscriptionPayments returns all payment records linked to a subscription,
+  // ordered by created_at descending (most recent first).
+  rpc ListSubscriptionPayments (ListSubscriptionPaymentsRequest) returns (ListSubscriptionPaymentsResponse) {
+    option (google.api.http) = { get: "/v1/subscriptions/{subscription_id}/payments" };
+  }
+}
+
+// ─── Plan ────────────────────────────────────────────────────────────────────
+
+// Plan defines the billing parameters for a recurring product offered by a tenant.
+// Maps to an OpenPay Plan object. All tenants share one OpenPay merchant account;
+// the tenant_id field enforces logical ownership.
+message Plan {
+  string                    id                   = 1;
+  string                    tenant_id            = 2;
+  string                    openpay_plan_id      = 3;
+  string                    name                 = 4;
+  Money                     amount               = 5;  // recurring charge per period
+  RepeatUnit                repeat_unit          = 6;  // billing cadence unit
+  int32                     repeat_every         = 7;  // e.g. 1 for monthly, 3 for quarterly
+  int32                     trial_days           = 8;  // 0 = no trial
+  int32                     retry_times          = 9;  // attempts before giving up
+  string                    status_on_retry_end  = 10; // "cancelled" | "unpaid"
+  bool                      active               = 11;
+  google.protobuf.Timestamp created_at           = 12;
+  google.protobuf.Timestamp updated_at           = 13;
+}
+
+// ─── Subscription ────────────────────────────────────────────────────────────
+
+// Subscription links a member to a billing plan for automatic recurring charges.
+// Maps to an OpenPay Subscription object under a customer.
+message Subscription {
+  string                    id                    = 1;
+  string                    tenant_id             = 2;
+  string                    member_id             = 3;
+  string                    plan_id               = 4;
+  string                    openpay_sub_id        = 5;
+  string                    source_card_id        = 6;  // OpenPay card ID used for billing
+  SubscriptionStatus        status                = 7;
+  google.protobuf.Timestamp trial_end_date        = 8;  // nil if no trial
+  google.protobuf.Timestamp period_end_date       = 9;  // next charge date
+  bool                      cancel_at_period_end  = 10;
+  int32                     failed_charge_count   = 11;
+  string                    last_charge_id        = 12; // payments.id of most recent charge
+  google.protobuf.Timestamp created_at            = 13;
+  google.protobuf.Timestamp updated_at            = 14;
+}
+
+// ─── CreatePlan ──────────────────────────────────────────────────────────────
+
+message CreatePlanRequest {
+  string     name              = 1;
+  Money      amount            = 2;
+  RepeatUnit repeat_unit       = 3;
+  int32      repeat_every      = 4;  // default 1
+  int32      trial_days        = 5;  // default 0
+  int32      retry_times       = 6;  // default 3
+  // status_on_retry_end: "cancelled" (default) or "unpaid"
+  string     status_on_retry_end = 7;
+}
+
+message CreatePlanResponse {
+  Plan plan = 1;
+}
+
+// ─── GetPlan ─────────────────────────────────────────────────────────────────
+
+message GetPlanRequest {
+  string plan_id = 1;
+}
+
+message GetPlanResponse {
+  Plan plan = 1;
+}
+
+// ─── ListPlans ───────────────────────────────────────────────────────────────
+
+message ListPlansRequest {
+  int32  page_size   = 1;
+  string page_token  = 2;
+  bool   active_only = 3; // default false: return all plans including inactive
+}
+
+message ListPlansResponse {
+  repeated Plan plans     = 1;
+  PageInfo      page_info = 2;
+}
+
+// ─── DeactivatePlan ──────────────────────────────────────────────────────────
+
+message DeactivatePlanRequest {
+  string plan_id = 1;
+}
+
+message DeactivatePlanResponse {}
+
+// ─── CreateSubscription ──────────────────────────────────────────────────────
+
+message CreateSubscriptionRequest {
+  string member_id     = 1; // which member to subscribe
+  string plan_id       = 2; // which plan to subscribe to
+  string source_card_id = 3; // OpenPay card ID to bill; must belong to this member
+  // trial_end_date overrides the plan's trial_days (ISO-8601 date "YYYY-MM-DD").
+  // Leave empty to use the plan's trial_days setting.
+  string trial_end_date = 4;
+}
+
+message CreateSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+// ─── GetSubscription ─────────────────────────────────────────────────────────
+
+message GetSubscriptionRequest {
+  string subscription_id = 1;
+}
+
+message GetSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+// ─── ListSubscriptions ───────────────────────────────────────────────────────
+
+message ListSubscriptionsRequest {
+  int32                     page_size   = 1;
+  string                    page_token  = 2;
+  SubscriptionFilter        filter      = 3;
+}
+
+message SubscriptionFilter {
+  string                    member_id = 1; // filter by member
+  string                    plan_id   = 2; // filter by plan
+  repeated SubscriptionStatus status  = 3; // filter by one or more statuses
+}
+
+message ListSubscriptionsResponse {
+  repeated Subscription subscriptions = 1;
+  PageInfo              page_info     = 2;
+}
+
+// ─── CancelSubscription ──────────────────────────────────────────────────────
+
+message CancelSubscriptionRequest {
+  string subscription_id = 1;
+}
+
+message CancelSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+// ─── ListSubscriptionPayments ────────────────────────────────────────────────
+
+message ListSubscriptionPaymentsRequest {
+  string subscription_id = 1;
+  int32  page_size       = 2;
+  string page_token      = 3;
+}
+
+message ListSubscriptionPaymentsResponse {
+  // Each entry is a charge record for one billing cycle of this subscription.
+  repeated Payment payments  = 1;
+  PageInfo         page_info = 2;
+}

@@ -54,6 +54,7 @@ type Payment struct {
 	TenantID             uuid.UUID       `db:"tenant_id"`
 	MemberID             uuid.UUID       `db:"member_id"`
 	LinkID               *uuid.UUID      `db:"link_id"`               // nil if not from a link
+	SubscriptionID       *uuid.UUID      `db:"subscription_id"`        // non-nil for subscription-billed payments
 	OpenpayTransactionID string          `db:"openpay_transaction_id"` // OpenPay charge ID
 	OrderID              string          `db:"order_id"`
 	IdempotencyKey       string          `db:"idempotency_key"`

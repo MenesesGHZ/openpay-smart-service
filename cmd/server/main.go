@@ -69,6 +69,9 @@ func main() {
 	tenantRepo := postgres.NewTenantRepo(db, cfg.Encryption.AESKeyHex)
 	paymentRepo := postgres.NewPaymentRepo(db)
 	balanceRepo := postgres.NewBalanceRepo(db)
+	planRepo := postgres.NewPlanRepo(db)
+	subscriptionRepo := postgres.NewSubscriptionRepo(db)
+	memberRepo := postgres.NewMemberRepo(db)
 
 	// ── Redis ─────────────────────────────────────────────────────────────────
 	rdb := redis.NewClient(&redis.Options{
@@ -88,6 +91,7 @@ func main() {
 	kafkaPublisher := kafka.NewPublisher(
 		cfg.Kafka.Brokers,
 		cfg.Kafka.TopicPaymentEvents,
+		cfg.Kafka.TopicSubscriptionEvents,
 		log.Logger,
 	)
 	defer func() {
@@ -98,6 +102,14 @@ func main() {
 
 	// ── gRPC services ─────────────────────────────────────────────────────────
 	paymentSvc := service.NewPaymentService(paymentRepo, opClient, log.Logger)
+	subscriptionSvc := service.NewSubscriptionService(
+		planRepo,
+		subscriptionRepo,
+		paymentRepo,
+		memberRepo,
+		opClient,
+		log.Logger,
+	)
 
 	// ── gRPC server ───────────────────────────────────────────────────────────
 	grpcServer := grpc.NewServer(
@@ -117,6 +129,7 @@ func main() {
 
 	// Register service handlers.
 	openpayv1.RegisterPaymentServiceServer(grpcServer, paymentSvc)
+	openpayv1.RegisterSubscriptionServiceServer(grpcServer, subscriptionSvc)
 
 	// Health check
 	healthSvc := health.NewServer()
@@ -152,6 +165,7 @@ func main() {
 		paymentRepo,
 		tenantRepo,
 		balanceRepo,
+		subscriptionRepo,
 		kafkaPublisher,
 		log.Logger,
 	)

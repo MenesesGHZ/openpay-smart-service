@@ -92,6 +92,7 @@ type KafkaConfig struct {
 
 	// Topic names
 	TopicPaymentEvents        string `mapstructure:"topic_payment_events"`
+	TopicSubscriptionEvents   string `mapstructure:"topic_subscription_events"`
 	TopicDisbursementCommands string `mapstructure:"topic_disbursement_commands"`
 	TopicWebhookOutbound      string `mapstructure:"topic_webhook_outbound"`
 	TopicWebhookDLQ           string `mapstructure:"topic_webhook_dlq"`
@@ -151,6 +152,7 @@ func Load(cfgPath string) (*Config, error) {
 
 	v.SetDefault("kafka.consumer_group", "openpay-smart-workers")
 	v.SetDefault("kafka.topic_payment_events", "payment.events")
+	v.SetDefault("kafka.topic_subscription_events", "subscription.events")
 	v.SetDefault("kafka.topic_disbursement_commands", "disbursement.commands")
 	v.SetDefault("kafka.topic_webhook_outbound", "webhook.outbound")
 	v.SetDefault("kafka.topic_webhook_dlq", "webhook.dlq")
