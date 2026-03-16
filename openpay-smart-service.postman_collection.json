@@ -1,0 +1,452 @@
+{
+  "info": {
+    "name": "OpenPay Smart Service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "REST API via grpc-gateway on http://localhost:8080. All requests require the X-API-Key header with a valid tenant API key."
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080" },
+    { "key": "api_key",  "value": "YOUR_TENANT_API_KEY" },
+    { "key": "member_id",       "value": "" },
+    { "key": "payment_id",      "value": "" },
+    { "key": "plan_id",         "value": "" },
+    { "key": "subscription_id", "value": "" },
+    { "key": "webhook_id",      "value": "" },
+    { "key": "link_id",         "value": "" },
+    { "key": "delivery_id",     "value": "" }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key",   "value": "X-API-Key" },
+      { "key": "value", "value": "{{api_key}}" },
+      { "key": "in",    "value": "header" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Members",
+      "item": [
+        {
+          "name": "Create Member",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/members",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"idem-001\",\n  \"external_id\": \"user-123\",\n  \"name\": \"Juan Pérez\",\n  \"email\": \"juan@example.com\",\n  \"phone\": \"+525512345678\",\n  \"address\": {\n    \"line1\": \"Av. Insurgentes 100\",\n    \"city\": \"Ciudad de México\",\n    \"state\": \"CDMX\",\n    \"postal_code\": \"06600\",\n    \"country\": \"MX\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Member",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/members/{{member_id}}"
+          }
+        },
+        {
+          "name": "Update Member",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/members/{{member_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Juan Pérez García\",\n  \"email\": \"juan2@example.com\",\n  \"phone\": \"+525512345679\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Members",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/members?page_size=20",
+              "query": [
+                { "key": "page_size", "value": "20" },
+                { "key": "page_token", "value": "", "disabled": true },
+                { "key": "email", "value": "", "disabled": true }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment Links",
+      "item": [
+        {
+          "name": "Create Payment Link",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/members/{{member_id}}/payment-links",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": { \"amount\": 50000, \"currency\": \"CURRENCY_MXN\" },\n  \"description\": \"Monthly fee\",\n  \"expires_in_secs\": 86400,\n  \"order_id\": \"order-456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Payment Link",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/payment-links/{{link_token}}"
+          }
+        },
+        {
+          "name": "List Payment Links",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/members/{{member_id}}/payment-links?page_size=20",
+              "query": [
+                { "key": "page_size", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Expire Payment Link",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/payment-links/{{link_id}}/expire",
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Get Payment Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/payments/{{payment_id}}"
+          }
+        },
+        {
+          "name": "List Payments (member)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/payments?page_size=20&filter.member_id={{member_id}}",
+              "query": [
+                { "key": "page_size", "value": "20" },
+                { "key": "filter.member_id", "value": "{{member_id}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Tenant Payments",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenant/payments?page_size=20",
+              "query": [
+                { "key": "page_size", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Refund Payment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/payments/{{payment_id}}/refund",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 0,\n  \"description\": \"Customer request\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Plans",
+      "item": [
+        {
+          "name": "Create Plan",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/plans",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Premium Monthly\",\n  \"amount\": { \"amount\": 29900, \"currency\": \"CURRENCY_MXN\" },\n  \"repeat_unit\": \"REPEAT_UNIT_MONTH\",\n  \"repeat_every\": 1,\n  \"trial_days\": 7,\n  \"retry_times\": 3,\n  \"status_on_retry_end\": \"cancelled\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Plan",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/plans/{{plan_id}}"
+          }
+        },
+        {
+          "name": "List Plans",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/plans?page_size=20",
+              "query": [
+                { "key": "page_size", "value": "20" },
+                { "key": "active_only", "value": "true", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deactivate Plan",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/plans/{{plan_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "Create Subscription",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/subscriptions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"member_id\": \"{{member_id}}\",\n  \"plan_id\": \"{{plan_id}}\",\n  \"source_card_id\": \"ktrpvymgatMdAmFjWA7D\",\n  \"trial_end_date\": \"\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Subscription",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/subscriptions/{{subscription_id}}"
+          }
+        },
+        {
+          "name": "List Subscriptions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/subscriptions?page_size=20",
+              "query": [
+                { "key": "page_size", "value": "20" },
+                { "key": "filter.member_id", "value": "{{member_id}}", "disabled": true },
+                { "key": "filter.plan_id",   "value": "{{plan_id}}",   "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel Subscription",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/subscriptions/{{subscription_id}}/cancel",
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "List Subscription Payments",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/subscriptions/{{subscription_id}}/payments?page_size=20",
+              "query": [
+                { "key": "page_size", "value": "20" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Balances",
+      "item": [
+        {
+          "name": "Get Tenant Balance",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenant/balance?currency=CURRENCY_MXN",
+              "query": [{ "key": "currency", "value": "CURRENCY_MXN" }]
+            }
+          }
+        },
+        {
+          "name": "Get Member Balance",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/members/{{member_id}}/balance"
+          }
+        },
+        {
+          "name": "List Balances",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenant/balances?page_size=20",
+              "query": [{ "key": "page_size", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "Get Balance History",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/members/{{member_id}}/balance/history?granularity=BALANCE_HISTORY_GRANULARITY_DAY",
+              "query": [
+                { "key": "granularity", "value": "BALANCE_HISTORY_GRANULARITY_DAY" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tenant",
+      "item": [
+        {
+          "name": "Setup Bank Account",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/tenant/bank-account",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clabe\": \"646180157000000007\",\n  \"holder_name\": \"Mi Empresa SA de CV\",\n  \"bank_name\": \"STP\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Bank Account",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenant/bank-account"
+          }
+        },
+        {
+          "name": "Delete Bank Account",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenant/bank-account"
+          }
+        },
+        {
+          "name": "Set Disbursement Frequency",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/tenant/disbursement/schedule",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"frequency\": \"DISBURSEMENT_FREQUENCY_DAILY\",\n  \"cron_expr\": \"\",\n  \"enabled\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Disbursement Schedule",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenant/disbursement/schedule"
+          }
+        },
+        {
+          "name": "Trigger Manual Disbursement",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/tenant/disbursement/trigger",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Manual payout\",\n  \"amount_limit\": 0\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "Register Webhook",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/webhooks",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://your-app.example.com/webhooks/openpay\",\n  \"events\": [\"charge.succeeded\", \"charge.failed\", \"payout.succeeded\"],\n  \"retry_policy\": {\n    \"max_attempts\": 7,\n    \"intervals_sec\": [5, 30, 120, 600, 3600, 21600, 86400]\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Webhook",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/webhooks/{{webhook_id}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://your-app.example.com/webhooks/openpay\",\n  \"events\": [\"charge.succeeded\", \"charge.failed\"],\n  \"enabled\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Webhook",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/webhooks/{{webhook_id}}"
+          }
+        },
+        {
+          "name": "List Webhooks",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/webhooks?page_size=20",
+              "query": [{ "key": "page_size", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "Get Webhook Delivery",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/webhooks/deliveries/{{delivery_id}}"
+          }
+        },
+        {
+          "name": "Retry Webhook Delivery",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/webhooks/deliveries/{{delivery_id}}/retry",
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        },
+        {
+          "name": "Rotate Webhook Secret",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/webhooks/{{webhook_id}}/rotate-secret",
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        }
+      ]
+    }
+  ]
+}
