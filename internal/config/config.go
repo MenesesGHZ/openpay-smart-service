@@ -10,15 +10,16 @@ import (
 
 // Config holds all runtime configuration for the service.
 type Config struct {
-	Server      ServerConfig      `mapstructure:"server"`
-	OpenPay     OpenPayConfig     `mapstructure:"openpay"`
-	Database    DatabaseConfig    `mapstructure:"database"`
-	Redis       RedisConfig       `mapstructure:"redis"`
-	Kafka       KafkaConfig       `mapstructure:"kafka"`
+	Server       ServerConfig       `mapstructure:"server"`
+	Admin        AdminConfig        `mapstructure:"admin"`
+	OpenPay      OpenPayConfig      `mapstructure:"openpay"`
+	Database     DatabaseConfig     `mapstructure:"database"`
+	Redis        RedisConfig        `mapstructure:"redis"`
+	Kafka        KafkaConfig        `mapstructure:"kafka"`
 	Disbursement DisbursementConfig `mapstructure:"disbursement"`
-	Webhook     WebhookConfig     `mapstructure:"webhook"`
-	Telemetry   TelemetryConfig   `mapstructure:"telemetry"`
-	Encryption  EncryptionConfig  `mapstructure:"encryption"`
+	Webhook      WebhookConfig      `mapstructure:"webhook"`
+	Telemetry    TelemetryConfig    `mapstructure:"telemetry"`
+	Encryption   EncryptionConfig   `mapstructure:"encryption"`
 }
 
 type ServerConfig struct {
@@ -40,7 +41,7 @@ type ServerConfig struct {
 // via environment variables (OPENPAY_OPENPAY_PRIVATE_KEY, etc.) and never
 // hard-coded in config.yaml.
 type OpenPayConfig struct {
-	Environment    string `mapstructure:"environment"`      // "sandbox" | "production"
+	Environment    string `mapstructure:"environment"` // "sandbox" | "production"
 	SandboxBaseURL string `mapstructure:"sandbox_base_url"`
 	ProdBaseURL    string `mapstructure:"prod_base_url"`
 	HTTPTimeoutMS  int    `mapstructure:"http_timeout_ms"`
@@ -100,9 +101,9 @@ type KafkaConfig struct {
 }
 
 type DisbursementConfig struct {
-	DefaultFrequency  string `mapstructure:"default_frequency"`   // daily | weekly | monthly
-	DefaultCron       string `mapstructure:"default_cron"`        // e.g. "0 18 * * *"
-	MinIntervalHours  int    `mapstructure:"min_interval_hours"`  // minimum custom interval
+	DefaultFrequency string `mapstructure:"default_frequency"`  // daily | weekly | monthly
+	DefaultCron      string `mapstructure:"default_cron"`       // e.g. "0 18 * * *"
+	MinIntervalHours int    `mapstructure:"min_interval_hours"` // minimum custom interval
 }
 
 type WebhookConfig struct {
@@ -112,16 +113,24 @@ type WebhookConfig struct {
 }
 
 type TelemetryConfig struct {
-	JaegerEndpoint  string `mapstructure:"jaeger_endpoint"`
-	PrometheusPort  int    `mapstructure:"prometheus_port"`
-	LogLevel        string `mapstructure:"log_level"` // trace | debug | info | warn | error
-	ServiceName     string `mapstructure:"service_name"`
+	JaegerEndpoint string `mapstructure:"jaeger_endpoint"`
+	PrometheusPort int    `mapstructure:"prometheus_port"`
+	LogLevel       string `mapstructure:"log_level"` // trace | debug | info | warn | error
+	ServiceName    string `mapstructure:"service_name"`
 }
 
 // EncryptionConfig holds the AES key used to encrypt sensitive values at rest
 // (webhook subscription secrets, tenant CLABE numbers).
 // The OpenPay private key itself is never written to the DB — it lives only in
 // this process's memory, loaded from the environment at startup.
+
+// AdminConfig holds the static admin API key used to authenticate back-office
+// operations (tenant CRUD). Set via OPENPAY_ADMIN_API_KEY environment variable.
+// If empty, all AdminTenantService RPCs return Unauthenticated.
+type AdminConfig struct {
+	APIKey string `mapstructure:"api_key"`
+}
+
 type EncryptionConfig struct {
 	// AES-256 key in hex (32 bytes = 64 hex chars).
 	// Generate with: openssl rand -hex 32
@@ -194,6 +203,7 @@ func Load(cfgPath string) (*Config, error) {
 		"redis.password",
 		"kafka.brokers",
 		"encryption.aes_key_hex",
+		"admin.api_key",
 	} {
 		_ = v.BindEnv(key)
 	}

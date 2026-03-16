@@ -39,6 +39,12 @@ func AuthInterceptor(tenantRepo repository.TenantRepository) grpc.UnaryServerInt
 			return handler(ctx, req)
 		}
 
+		// Admin-authenticated requests (validated by AdminAuthInterceptor) skip
+		// the tenant key lookup — there is no tenant context for admin calls.
+		if isAdminAuthenticated(ctx) {
+			return handler(ctx, req)
+		}
+
 		key, err := extractBearerToken(ctx)
 		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "missing or malformed Authorization header")

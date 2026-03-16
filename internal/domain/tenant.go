@@ -20,8 +20,9 @@ import (
 type Tenant struct {
 	ID             uuid.UUID `db:"id"`
 	Name           string    `db:"name"`
-	APIKeyHash     string    `db:"api_key_hash"` // SHA-256 of the tenant's API key
-	Tier           string    `db:"tier"`         // "free" | "standard" | "enterprise"
+	APIKeyHash     string    `db:"api_key_hash"`   // SHA-256 of the tenant's API key
+	APIKeyPrefix   string    `db:"api_key_prefix"` // first 12 chars of raw key, for display only
+	Tier           string    `db:"tier"`           // "free" | "standard" | "enterprise"
 
 	// Payout destination — where this tenant receives their disbursements via SPEI.
 	// Set by the tenant via SetupBankAccount RPC; required before any payout can run.
@@ -35,8 +36,9 @@ type Tenant struct {
 	// Defaults to the service-wide default (e.g. 150) if not explicitly set per tenant.
 	PlatformFeeBPS int `db:"platform_fee_bps"`
 
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at"` // nil = active; non-nil = soft-deleted
 }
 
 // HasBankAccount returns true when the tenant has a complete payout destination set up.

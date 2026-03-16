@@ -11,10 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
@@ -100,7 +102,7 @@ func main() {
 		}
 	}()
 
-	// ── gRPC services ─────────────────────────────────────────────────────────
+	// ── Services ──────────────────────────────────────────────────────────────
 	paymentSvc := service.NewPaymentService(paymentRepo, opClient, log.Logger)
 	subscriptionSvc := service.NewSubscriptionService(
 		planRepo,
@@ -110,11 +112,15 @@ func main() {
 		opClient,
 		log.Logger,
 	)
+	adminTenantSvc := service.NewAdminTenantService(tenantRepo, log.Logger)
 
 	// ── gRPC server ───────────────────────────────────────────────────────────
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			middleware.LoggingInterceptor(log.Logger),
+			// AdminAuthInterceptor must come before AuthInterceptor so that admin
+			// requests are validated and flagged before the tenant lookup runs.
+			middleware.AdminAuthInterceptor(cfg.Admin.APIKey),
 			middleware.AuthInterceptor(tenantRepo),
 			middleware.RateLimitInterceptor(rdb, func(tenantID string) middleware.TenantTier {
 				// TODO: look up the tenant's tier from tenantRepo for accurate rate limits.
@@ -130,6 +136,7 @@ func main() {
 	// Register service handlers.
 	openpayv1.RegisterPaymentServiceServer(grpcServer, paymentSvc)
 	openpayv1.RegisterSubscriptionServiceServer(grpcServer, subscriptionSvc)
+	openpayv1.RegisterAdminTenantServiceServer(grpcServer, adminTenantSvc)
 
 	// Health check
 	healthSvc := health.NewServer()
@@ -144,6 +151,32 @@ func main() {
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
 		log.Fatal().Err(err).Str("addr", grpcAddr).Msg("cannot bind gRPC port")
+	}
+
+	// ── grpc-gateway (REST → gRPC translation) ────────────────────────────────
+	// RegisterXxxHandlerFromEndpoint dials the gRPC server, so HTTP requests go
+	// through the full interceptor chain (auth, rate limit, logging).
+	gwMux := runtime.NewServeMux()
+	grpcEndpoint := fmt.Sprintf("localhost:%d", cfg.Server.GRPCPort)
+	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+
+	for _, reg := range []struct {
+		name string
+		fn   func() error
+	}{
+		{"AdminTenantService", func() error {
+			return openpayv1.RegisterAdminTenantServiceHandlerFromEndpoint(ctx, gwMux, grpcEndpoint, dialOpts)
+		}},
+		{"PaymentService", func() error {
+			return openpayv1.RegisterPaymentServiceHandlerFromEndpoint(ctx, gwMux, grpcEndpoint, dialOpts)
+		}},
+		{"SubscriptionService", func() error {
+			return openpayv1.RegisterSubscriptionServiceHandlerFromEndpoint(ctx, gwMux, grpcEndpoint, dialOpts)
+		}},
+	} {
+		if err := reg.fn(); err != nil {
+			log.Fatal().Err(err).Str("service", reg.name).Msg("failed to register grpc-gateway handler")
+		}
 	}
 
 	// ── HTTP mux ──────────────────────────────────────────────────────────────
@@ -171,7 +204,8 @@ func main() {
 	)
 	httpMux.Handle("/webhooks/openpay", ingressHandler)
 
-	// TODO: register grpc-gateway mux once REST translation is needed.
+	// REST gateway — all /v1/ routes are handled by grpc-gateway.
+	httpMux.Handle("/v1/", gwMux)
 
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.HTTPPort),

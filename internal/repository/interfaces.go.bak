@@ -17,13 +17,6 @@ type TenantRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Tenant, error)
 	GetByAPIKeyHash(ctx context.Context, hash string) (*domain.Tenant, error)
 	Update(ctx context.Context, t *domain.Tenant) error
-	// List returns active (non-deleted) tenants with optional tier filter and cursor pagination.
-	List(ctx context.Context, opts ListTenantsOptions) ([]*domain.Tenant, string, error)
-	// Delete soft-deletes a tenant by setting deleted_at = NOW().
-	// A deleted tenant cannot authenticate and is excluded from List results.
-	Delete(ctx context.Context, id uuid.UUID) error
-	// RotateAPIKey replaces the tenant's api_key_hash and api_key_prefix atomically.
-	RotateAPIKey(ctx context.Context, id uuid.UUID, newHash, newPrefix string) error
 
 	// Bank account — payout destination for this tenant via SPEI.
 	// The CLABE is stored AES-encrypted; only a masked version is returned to callers.
@@ -36,12 +29,6 @@ type TenantRepository interface {
 	// ListDueSchedules returns all enabled schedules whose next_run_at <= before.
 	// Used by the scheduler worker to find tenants to disburse.
 	ListDueSchedules(ctx context.Context, before time.Time) ([]*domain.DisbursementSchedule, error)
-}
-
-type ListTenantsOptions struct {
-	Tier      string // optional filter: "free" | "standard" | "enterprise"
-	PageSize  int    // 0 → default (20)
-	PageToken string // opaque cursor from previous ListTenantsResponse
 }
 
 // ─── Member ───────────────────────────────────────────────────────────────────
