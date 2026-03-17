@@ -25,6 +25,10 @@ type TenantRepository interface {
 	// RotateAPIKey replaces the tenant's api_key_hash and api_key_prefix atomically.
 	RotateAPIKey(ctx context.Context, id uuid.UUID, newHash, newPrefix string) error
 
+	// Logo — optional tenant branding stored in S3.
+	// SetLogoURL persists the S3 public URL for the tenant's logo.
+	SetLogoURL(ctx context.Context, tenantID uuid.UUID, logoURL string) error
+
 	// Bank account — payout destination for this tenant via SPEI.
 	// The CLABE is stored AES-encrypted; only a masked version is returned to callers.
 	SetBankAccount(ctx context.Context, tenantID uuid.UUID, clabe, holderName, bankName string) error

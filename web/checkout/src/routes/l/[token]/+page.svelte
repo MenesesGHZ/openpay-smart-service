@@ -20,6 +20,7 @@
   let errorMsg      = '';
   let deviceSessionId = '';
   let openpayReady  = false;
+  let cardFocused   = false;
 
   // ── Derived ───────────────────────────────────────────────────────────────
   $: alreadyRedeemed = info.status === 'redeemed';
@@ -62,7 +63,7 @@
   function onCardNumberInput(e) {
     const raw    = e.target.value.replace(/\D/g, '').slice(0, 16);
     const chunks = raw.match(/.{1,4}/g) || [];
-    cardNumber   = chunks.join(' ');
+    cardNumber   = chunks.join('  ');
     e.target.value = cardNumber;
   }
 
@@ -206,12 +207,16 @@
     <aside class="summary">
       <div class="summary-inner">
         <div class="merchant">
-          <div class="merchant-logo" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2.5 7l3 3 6-6" stroke="white" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <span class="merchant-name">OpenPay</span>
+          {#if info.logoUrl}
+            <img class="merchant-logo-img" src={info.logoUrl} alt={info.tenantName || 'Merchant logo'} />
+          {:else}
+            <div class="merchant-logo" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M2.5 7l3 3 6-6" stroke="white" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          {/if}
+          <span class="merchant-name">{info.tenantName || 'OpenPay'}</span>
         </div>
 
         <div class="plan-info">
@@ -224,15 +229,15 @@
           </p>
         </div>
 
-        <div class="summary-divider"></div>
-
-        <div class="summary-line">
-          <span>Subtotal</span>
-          <span>{formattedAmount}</span>
-        </div>
-        <div class="summary-line total">
-          <span>Total due today</span>
-          <span>{formattedAmount}</span>
+        <div class="line-items">
+          <div class="summary-line">
+            <span>Subtotal</span>
+            <span>{formattedAmount}</span>
+          </div>
+          <div class="summary-line total">
+            <span>Total due today</span>
+            <span>{formattedAmount}</span>
+          </div>
         </div>
 
         <div class="summary-footer">
@@ -267,11 +272,12 @@
 
         <!-- Payment details -->
         <section class="form-section">
-          <h2 class="section-label">Payment details</h2>
+          <h2 class="section-label">Card information</h2>
 
-          <div class="field">
-            <label for="cardNumber">Card number</label>
-            <div class="card-input-wrap">
+          <!-- Stripe-style grouped card input -->
+          <div class="card-group" class:cg-focused={cardFocused}>
+            <!-- Row 1: card number + card brand icons -->
+            <div class="cg-row cg-number">
               <input
                 id="cardNumber"
                 type="text"
@@ -280,31 +286,30 @@
                 autocomplete="cc-number"
                 value={cardNumber}
                 on:input={onCardNumberInput}
+                on:focus={() => cardFocused = true}
+                on:blur={() => cardFocused = false}
               />
-              <span class="card-brand">
-                {#if cardBrand === 'visa'}
-                  <svg viewBox="0 0 48 16" fill="none" class="brand-icon">
-                    <text x="0" y="13" font-family="Arial" font-size="14" font-weight="700" fill="#1A1F71">VISA</text>
-                  </svg>
-                {:else if cardBrand === 'mastercard'}
-                  <svg viewBox="0 0 32 20" class="brand-icon">
-                    <circle cx="12" cy="10" r="10" fill="#EB001B"/>
-                    <circle cx="20" cy="10" r="10" fill="#F79E1B"/>
-                    <path d="M16 3.5a10 10 0 010 13A10 10 0 0116 3.5z" fill="#FF5F00"/>
-                  </svg>
-                {:else if cardBrand === 'amex'}
-                  <svg viewBox="0 0 48 16" fill="none" class="brand-icon">
-                    <text x="0" y="13" font-family="Arial" font-size="11" font-weight="700" fill="#2E77BC">AMEX</text>
-                  </svg>
-                {/if}
+              <span class="ci-group">
+                <svg class="ci" class:ci-dim={cardBrand !== 'unknown' && cardBrand !== 'visa'} viewBox="0 0 38 24" fill="none">
+                  <rect width="38" height="24" rx="3" fill="#fff" stroke="#e4e4e7"/>
+                  <text x="19" y="16" text-anchor="middle" font-family="Arial" font-size="10" font-weight="800" fill="#1A1F71">VISA</text>
+                </svg>
+                <svg class="ci" class:ci-dim={cardBrand !== 'unknown' && cardBrand !== 'mastercard'} viewBox="0 0 38 24" fill="none">
+                  <rect width="38" height="24" rx="3" fill="#fff" stroke="#e4e4e7"/>
+                  <circle cx="15" cy="12" r="7" fill="#EB001B"/>
+                  <circle cx="23" cy="12" r="7" fill="#F79E1B"/>
+                  <path d="M19 6.8a7 7 0 010 10.4A7 7 0 0119 6.8z" fill="#FF5F00"/>
+                </svg>
+                <svg class="ci" class:ci-dim={cardBrand !== 'unknown' && cardBrand !== 'amex'} viewBox="0 0 38 24" fill="none">
+                  <rect width="38" height="24" rx="3" fill="#2E77BC"/>
+                  <text x="19" y="16" text-anchor="middle" font-family="Arial" font-size="8" font-weight="700" fill="#fff">AMEX</text>
+                </svg>
               </span>
             </div>
-          </div>
-
-          <div class="field-row">
-            <div class="field">
-              <label for="expiry">Expiration date</label>
+            <!-- Row 2: expiry | separator | CVC -->
+            <div class="cg-row cg-bottom">
               <input
+                class="cg-half"
                 id="expiry"
                 type="text"
                 inputmode="numeric"
@@ -313,19 +318,12 @@
                 value={expiry}
                 on:input={onExpiryInput}
                 on:keydown={onExpiryKeydown}
+                on:focus={() => cardFocused = true}
+                on:blur={() => cardFocused = false}
               />
-            </div>
-            <div class="field">
-              <label for="cvc">
-                Security code
-                <span class="cvc-hint" title="3 or 4 digit code on the back of your card">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <circle cx="7" cy="7" r="6.5" stroke="#9ba3af"/>
-                    <text x="7" y="11" text-anchor="middle" font-size="9" fill="#9ba3af" font-family="Arial">?</text>
-                  </svg>
-                </span>
-              </label>
+              <span class="cg-sep"></span>
               <input
+                class="cg-half"
                 id="cvc"
                 type="text"
                 inputmode="numeric"
@@ -333,17 +331,20 @@
                 autocomplete="cc-csc"
                 value={cvc}
                 on:input={onCvcInput}
+                on:focus={() => cardFocused = true}
+                on:blur={() => cardFocused = false}
               />
             </div>
           </div>
 
-          <div class="field">
-            <label for="nameOnCard">Name on card</label>
+          <!-- Cardholder name — standalone field below group -->
+          <div class="field" style="margin-top:.875rem;">
+            <label for="nameOnCard">Cardholder name</label>
             <input
               id="nameOnCard"
               type="text"
               bind:value={nameOnCard}
-              placeholder="Full name"
+              placeholder="Full name on card"
               autocomplete="cc-name"
             />
           </div>
@@ -392,129 +393,139 @@
 <style>
   /* ── Layout ──────────────────────────────────────────────────────────────── */
   .layout {
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
 
-  /* ── Summary — dark left panel ───────────────────────────────────────────── */
+  /* ── Summary — light left panel ─────────────────────────────────────────── */
   .summary {
     background: var(--panel-bg);
     display: flex;
     justify-content: flex-end;
     position: relative;
-  }
-  .summary::after {
-    content: '';
-    position: absolute;
-    inset-block: 0;
-    right: 0;
-    width: 1px;
-    background: var(--panel-border);
+    z-index: 1;
+    box-shadow: 4px 0 16px rgba(0,0,0,.06);
+    height: 100vh;
+    overflow-y: auto;
   }
   .summary-inner {
     max-width: 440px;
     width: 100%;
-    padding: 4.5rem 3rem 3rem 2.5rem;
+    padding: 4rem 3rem 3rem 2.5rem;
     display: flex;
     flex-direction: column;
   }
 
+  /* merchant header */
   .merchant {
     display: flex;
     align-items: center;
     gap: .625rem;
-    margin-bottom: 3rem;
+    margin-bottom: 2.5rem;
   }
   .merchant-logo {
-    width: 28px; height: 28px;
+    width: 32px; height: 32px;
     background: var(--brand);
-    border-radius: 7px;
+    border-radius: 8px;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
   }
   .merchant-logo svg { display: block; }
+  .merchant-logo-img {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+    display: block;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+  }
   .merchant-name {
-    font-size: .875rem;
-    font-weight: 500;
+    font-size: .9375rem;
+    font-weight: 600;
     color: var(--panel-text);
-    letter-spacing: -.01em;
+    letter-spacing: -.02em;
   }
 
   .plan-label {
     font-size: .6875rem;
     font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: .1em;
+    letter-spacing: .08em;
     color: var(--panel-muted);
     margin-bottom: .5rem;
   }
   .plan-name {
-    font-size: 1.25rem;
-    font-weight: 500;
+    font-size: 1.125rem;
+    font-weight: 600;
     color: var(--panel-text);
     margin-bottom: .375rem;
     letter-spacing: -.02em;
-    line-height: 1.3;
+    line-height: 1.35;
   }
   .plan-description {
     font-size: .8125rem;
     color: var(--panel-muted);
     letter-spacing: -.005em;
-    margin-bottom: 1.25rem;
-    line-height: 1.5;
+    margin-bottom: 1.5rem;
+    line-height: 1.55;
   }
   .plan-price {
     display: flex;
     align-items: baseline;
-    gap: .35rem;
+    gap: .3rem;
     flex-wrap: wrap;
   }
   .price-amount {
-    font-size: 2.75rem;
-    font-weight: 600;
+    font-size: 2.5rem;
+    font-weight: 700;
     color: var(--panel-text);
     letter-spacing: -.04em;
     line-height: 1;
   }
   .price-currency {
-    font-size: .75rem;
+    font-size: .6875rem;
     font-weight: 500;
     color: var(--panel-muted);
-    letter-spacing: .04em;
+    letter-spacing: .06em;
     text-transform: uppercase;
-    background: rgba(255,255,255,.08);
-    border: 1px solid rgba(255,255,255,.1);
+    background: var(--panel-subtle);
+    border: 1px solid var(--panel-border);
     border-radius: 4px;
     padding: .15rem .4rem;
     align-self: flex-end;
-    margin-bottom: .35rem;
+    margin-bottom: .3rem;
     font-family: var(--font-mono);
   }
 
-  .summary-divider {
-    height: 1px;
-    background: var(--panel-border);
-    margin: 2.5rem 0 1.5rem;
+  .line-items {
+    border-top: 1px solid var(--panel-border);
+    padding-top: 1.25rem;
+    margin-top: 1.75rem;
   }
   .summary-line {
     display: flex;
     justify-content: space-between;
     font-size: .8125rem;
     color: var(--panel-muted);
-    margin-bottom: .625rem;
+    margin-bottom: .5rem;
     letter-spacing: -.005em;
   }
   .summary-line.total {
     font-size: .875rem;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--panel-text);
-    margin-top: .5rem;
+    margin-top: .625rem;
+    padding-top: .625rem;
+    border-top: 1px solid var(--panel-border);
+    margin-bottom: 0;
   }
 
   .summary-footer {
     margin-top: auto;
-    padding-top: 3rem;
+    padding-top: 2.5rem;
   }
   .powered-by {
     display: flex;
@@ -525,9 +536,9 @@
     letter-spacing: -.005em;
   }
   .op-icon { width: 16px; height: 16px; display: block; flex-shrink: 0; }
-  .powered-by strong { color: rgba(255,255,255,.6); font-weight: 500; }
+  .powered-by strong { color: var(--panel-text); font-weight: 500; }
 
-  /* ── Form panel ───────────────────────────────────────────────────────────── */
+  /* ── Form panel — white right ─────────────────────────────────────────────── */
   .form-panel {
     background: #fff;
     display: flex;
@@ -536,7 +547,7 @@
   .form-inner {
     max-width: 420px;
     width: 100%;
-    padding: 4.5rem 2.5rem 3rem 3rem;
+    padding: 4rem 2.5rem 3rem 3.5rem;
   }
 
   .form-section { margin-bottom: 1.75rem; }
@@ -581,23 +592,64 @@
     box-shadow: 0 0 0 3px var(--input-ring);
   }
 
-  .card-input-wrap { position: relative; }
-  .card-input-wrap input { padding-right: 3rem; }
-  .card-brand {
-    position: absolute;
-    right: .75rem; top: 50%;
-    transform: translateY(-50%);
-    pointer-events: none;
-    display: flex; align-items: center;
+  /* ── Stripe-style card group ─────────────────────────────────────────────── */
+  .card-group {
+    border: 1px solid var(--zinc-200);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    transition: border-color .12s ease, box-shadow .12s ease;
   }
-  .brand-icon { width: 30px; height: 18px; }
-
-  .field-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: .75rem;
+  .card-group.cg-focused {
+    border-color: var(--zinc-700);
+    box-shadow: 0 0 0 3px var(--input-ring);
   }
-  .cvc-hint { cursor: help; display: flex; color: var(--zinc-400); }
+  .cg-row {
+    display: flex;
+    align-items: stretch;
+  }
+  .cg-row + .cg-row {
+    border-top: 1px solid var(--zinc-200);
+  }
+  /* inputs inside the group reset all field styles */
+  .card-group input {
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    flex: 1;
+    min-width: 0;
+    padding: .5625rem .75rem;
+    font-size: .9375rem;
+    font-family: var(--font);
+    color: var(--zinc-950);
+    background: #fff;
+    outline: none;
+    appearance: none;
+    letter-spacing: -.01em;
+    width: 100%;
+  }
+  .card-group input::placeholder { color: var(--zinc-400); }
+  /* card brand icons row */
+  .ci-group {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    padding-right: .75rem;
+    flex-shrink: 0;
+  }
+  .ci {
+    width: 28px;
+    height: 18px;
+    display: block;
+    transition: opacity .15s ease;
+  }
+  .ci-dim { opacity: .2; }
+  /* vertical separator between expiry and CVC */
+  .cg-sep {
+    width: 1px;
+    background: var(--zinc-200);
+    flex-shrink: 0;
+    align-self: stretch;
+  }
 
   .error-banner {
     display: flex;
@@ -708,8 +760,8 @@
       grid-template-columns: 1fr;
       grid-template-rows: auto 1fr;
     }
-    .summary::after { display: none; }
     .summary {
+      box-shadow: 0 4px 16px rgba(0,0,0,.06);
       border-bottom: 1px solid var(--panel-border);
       justify-content: center;
     }

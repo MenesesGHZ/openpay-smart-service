@@ -250,6 +250,7 @@ message CreateSubscriptionLinkRequest {
   string member_id       = 1;
   string plan_id         = 2;
   int64  expires_in_secs = 3; // 0 = no expiry
+  string description     = 4; // optional description shown on the checkout page
 }
 message CreateSubscriptionLinkResponse {
   SubscriptionLink link         = 1;
@@ -279,6 +280,9 @@ message GetSubscriptionLinkInfoResponse {
   string member_email = 7;
   string status       = 8; // "pending" | "completed" | "expired" | "cancelled"
   string expires_at   = 9; // RFC 3339 timestamp or "" if no expiry
+  string description  = 10; // optional description set at link creation
+  string tenant_name  = 11; // display name of the tenant
+  string logo_url     = 12; // publicly accessible URL of the tenant's logo (may be empty)
 }
 
 // ─── GetPaymentLinkInfo ───────────────────────────────────────────────────────
@@ -295,6 +299,8 @@ message GetPaymentLinkInfoResponse {
   string status       = 6; // "active" | "redeemed" | "expired" | "cancelled"
   string expires_at   = 7; // RFC 3339 timestamp or "" if no expiry
   string order_id     = 8;
+  string tenant_name  = 9;  // display name of the tenant
+  string logo_url     = 10; // publicly accessible URL of the tenant's logo (may be empty)
 }
 
 // ─── RedeemPaymentLink ────────────────────────────────────────────────────────

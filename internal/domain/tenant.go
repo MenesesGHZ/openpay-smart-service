@@ -36,6 +36,10 @@ type Tenant struct {
 	// Defaults to the service-wide default (e.g. 150) if not explicitly set per tenant.
 	PlatformFeeBPS int `db:"platform_fee_bps"`
 
+	// LogoURL is the publicly accessible URL of the tenant's logo stored in S3.
+	// Empty string means no logo has been uploaded yet.
+	LogoURL string `db:"logo_url"`
+
 	CreatedAt time.Time  `db:"created_at"`
 	UpdatedAt time.Time  `db:"updated_at"`
 	DeletedAt *time.Time `db:"deleted_at"` // nil = active; non-nil = soft-deleted

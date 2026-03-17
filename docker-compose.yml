@@ -23,6 +23,13 @@ services:
       OPENPAY_DATABASE_DSN: "postgres://openpay:openpay@postgres:5432/openpay_smart?sslmode=disable"
       OPENPAY_REDIS_ADDR: "redis:6379"
       OPENPAY_KAFKA_BROKERS: "kafka:9092"
+      # LocalStack S3 — points to the local S3 emulator
+      OPENPAY_S3_ENDPOINT: "http://localstack:4566"
+      OPENPAY_S3_PUBLIC_URL: "http://localhost:4566/openpay-assets"
+      OPENPAY_S3_BUCKET: "openpay-assets"
+      OPENPAY_S3_REGION: "us-east-1"
+      OPENPAY_S3_ACCESS_KEY_ID: "test"
+      OPENPAY_S3_SECRET_KEY: "test"
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,6 +40,8 @@ services:
       kafka-init:
         condition: service_completed_successfully
       migrate:
+        condition: service_completed_successfully
+      localstack-init:
         condition: service_completed_successfully
     restart: unless-stopped
 
@@ -138,6 +147,44 @@ services:
           --topic subscription.events --partitions 1 --replication-factor 1
         echo "Kafka topics ready."
 
+  # ── LocalStack (AWS S3 emulation for tenant logo uploads) ────────────────────
+  localstack:
+    image: localstack/localstack:3
+    ports:
+      - "4566:4566"   # LocalStack gateway (S3, etc.)
+    environment:
+      SERVICES: s3
+      DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      PERSISTENCE: 0
+    volumes:
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3 ls 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ── LocalStack bucket init (creates openpay-assets on first start) ────────────
+  localstack-init:
+    image: localstack/localstack:3
+    entrypoint: >
+      sh -c "
+        sleep 5 &&
+        awslocal --endpoint-url=http://localstack:4566 s3 mb s3://openpay-assets --region us-east-1 2>/dev/null || true &&
+        awslocal --endpoint-url=http://localstack:4566 s3api put-bucket-acl --bucket openpay-assets --acl public-read 2>/dev/null || true &&
+        echo 'openpay-assets bucket ready.'
+      "
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+    depends_on:
+      localstack:
+        condition: service_healthy
+
   # ── Kafka UI (optional dev tool) ─────────────────────────────────────────────
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -182,3 +229,4 @@ volumes:
   redis_data:
   kafka_data:
   zookeeper_data:
+  localstack_data:

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
@@ -28,8 +29,10 @@ import (
 	"github.com/menesesghz/openpay-smart-service/internal/kafka"
 	"github.com/menesesghz/openpay-smart-service/internal/middleware"
 	"github.com/menesesghz/openpay-smart-service/internal/openpay"
+	"github.com/menesesghz/openpay-smart-service/internal/repository"
 	"github.com/menesesghz/openpay-smart-service/internal/repository/postgres"
 	"github.com/menesesghz/openpay-smart-service/internal/service"
+	"github.com/menesesghz/openpay-smart-service/internal/storage"
 	"github.com/menesesghz/openpay-smart-service/internal/webhook"
 )
 
@@ -105,6 +108,16 @@ func main() {
 		}
 	}()
 
+	// ── S3 / Object Storage ───────────────────────────────────────────────────
+	var store storage.Storage
+	s3store, err := storage.NewS3Storage(ctx, cfg.S3)
+	if err != nil {
+		log.Warn().Err(err).Msg("S3 storage unavailable — logo uploads disabled")
+	} else {
+		store = s3store
+		log.Info().Str("bucket", cfg.S3.Bucket).Str("endpoint", cfg.S3.Endpoint).Msg("S3 storage connected")
+	}
+
 	// ── Services ──────────────────────────────────────────────────────────────
 	paymentSvc := service.NewPaymentService(paymentRepo, opClient, log.Logger)
 	subscriptionSvc := service.NewSubscriptionService(
@@ -115,9 +128,9 @@ func main() {
 		opClient,
 		log.Logger,
 	)
-	adminTenantSvc := service.NewAdminTenantService(tenantRepo, log.Logger)
+	adminTenantSvc := service.NewAdminTenantService(tenantRepo, store, log.Logger)
 	tenantSvc := service.NewTenantService(tenantRepo, log.Logger)
-	memberSvc := service.NewMemberService(memberRepo, planRepo, subscriptionRepo, paymentRepo, opClient, cfg.Server.CheckoutBaseURL, log.Logger)
+	memberSvc := service.NewMemberService(memberRepo, planRepo, subscriptionRepo, paymentRepo, tenantRepo, opClient, cfg.Server.CheckoutBaseURL, log.Logger)
 	balanceSvc := service.NewBalanceService(balanceRepo, log.Logger)
 	webhookSvc := service.NewWebhookService(webhookRepo, cfg.Encryption.AESKeyHex, log.Logger)
 
@@ -235,6 +248,19 @@ func main() {
 		log.Logger,
 	)
 	httpMux.Handle("/webhooks/openpay", ingressHandler)
+
+	// Tenant logo upload — POST /v1/admin/tenants/{tenant_id}/logo
+	// Accepts multipart/form-data with a single "logo" file field.
+	// Requires the admin API key: Authorization: Bearer <OPENPAY_ADMIN_API_KEY>
+	httpMux.HandleFunc("/v1/admin/tenants/", func(w http.ResponseWriter, r *http.Request) {
+		// Only handle the /logo sub-path; everything else falls through to gwMux.
+		path := r.URL.Path
+		if r.Method == http.MethodPost && strings.HasSuffix(path, "/logo") {
+			handleLogoUpload(w, r, cfg.Admin.APIKey, tenantRepo, store, log.Logger)
+			return
+		}
+		gwMux.ServeHTTP(w, r)
+	})
 
 	// REST gateway — all /v1/ routes are handled by grpc-gateway.
 	httpMux.Handle("/v1/", gwMux)
@@ -354,6 +380,111 @@ func isPrivateOrLoopback(ipStr string) bool {
 		}
 	}
 	return false
+}
+
+// handleLogoUpload handles POST /v1/admin/tenants/{tenant_id}/logo.
+// It reads a multipart "logo" field, uploads the image to S3, then persists
+// the resulting public URL on the tenant row and returns it as JSON.
+func handleLogoUpload(
+	w http.ResponseWriter,
+	r *http.Request,
+	adminKey string,
+	tenants repository.TenantRepository,
+	store storage.Storage,
+	logger zerolog.Logger,
+) {
+	// ── Admin auth ────────────────────────────────────────────────────────────
+	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if bearer == "" || bearer != adminKey {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// ── S3 availability ───────────────────────────────────────────────────────
+	if store == nil {
+		http.Error(w, `{"error":"logo uploads are not configured"}`, http.StatusNotImplemented)
+		return
+	}
+
+	// ── Extract tenant_id from path ────────────────────────────────────────────
+	// Path: /v1/admin/tenants/<tenant_id>/logo
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	// parts: ["v1","admin","tenants","<id>","logo"]
+	if len(parts) < 5 {
+		http.Error(w, `{"error":"invalid path"}`, http.StatusBadRequest)
+		return
+	}
+	tenantIDStr := parts[3]
+
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid tenant_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Verify tenant exists.
+	if _, err := tenants.GetByID(r.Context(), tenantID); err != nil {
+		http.Error(w, `{"error":"tenant not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// ── Parse multipart body (max 5 MB) ───────────────────────────────────────
+	if err := r.ParseMultipartForm(5 << 20); err != nil {
+		http.Error(w, `{"error":"request body too large or not multipart"}`, http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("logo")
+	if err != nil {
+		http.Error(w, `{"error":"logo field is required"}`, http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// ── Validate content type ─────────────────────────────────────────────────
+	allowed := map[string]string{
+		"image/jpeg": ".jpg",
+		"image/png":  ".png",
+		"image/gif":  ".gif",
+		"image/webp": ".webp",
+		"image/svg+xml": ".svg",
+	}
+	ct := header.Header.Get("Content-Type")
+	ext, ok := allowed[ct]
+	if !ok {
+		http.Error(w, `{"error":"unsupported image type; use jpeg, png, gif, webp, or svg"}`, http.StatusUnsupportedMediaType)
+		return
+	}
+
+	data := make([]byte, header.Size)
+	if _, err := file.Read(data); err != nil {
+		http.Error(w, `{"error":"failed to read file"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// ── Upload to S3 ──────────────────────────────────────────────────────────
+	key := fmt.Sprintf("tenant-logos/%s/logo%s", tenantIDStr, ext)
+	logoURL, err := store.UploadLogo(r.Context(), key, ct, data)
+	if err != nil {
+		logger.Error().Err(err).Str("tenant_id", tenantIDStr).Msg("s3 logo upload failed")
+		http.Error(w, `{"error":"logo upload failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// ── Persist URL ───────────────────────────────────────────────────────────
+	if err := tenants.SetLogoURL(r.Context(), tenantID, logoURL); err != nil {
+		logger.Error().Err(err).Str("tenant_id", tenantIDStr).Msg("set logo url failed")
+		http.Error(w, `{"error":"failed to save logo url"}`, http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info().
+		Str("tenant_id", tenantIDStr).
+		Str("logo_url", logoURL).
+		Msg("tenant logo uploaded")
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"logo_url":%q}`, logoURL)
 }
 
 // corsMiddleware adds CORS headers so browser-based clients (e.g. the checkout

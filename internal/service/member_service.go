@@ -29,6 +29,7 @@ type MemberService struct {
 	planRepo         repository.PlanRepository
 	subscriptionRepo repository.SubscriptionRepository
 	paymentRepo      repository.PaymentRepository
+	tenantRepo       repository.TenantRepository
 	opClient         *openpay.Client
 	checkoutBaseURL  string
 	log              zerolog.Logger
@@ -39,6 +40,7 @@ func NewMemberService(
 	planRepo repository.PlanRepository,
 	subscriptionRepo repository.SubscriptionRepository,
 	paymentRepo repository.PaymentRepository,
+	tenantRepo repository.TenantRepository,
 	opClient *openpay.Client,
 	checkoutBaseURL string,
 	log zerolog.Logger,
@@ -48,6 +50,7 @@ func NewMemberService(
 		planRepo:         planRepo,
 		subscriptionRepo: subscriptionRepo,
 		paymentRepo:      paymentRepo,
+		tenantRepo:       tenantRepo,
 		opClient:         opClient,
 		checkoutBaseURL:  strings.TrimRight(checkoutBaseURL, "/"),
 		log:              log.With().Str("service", "member").Logger(),
@@ -686,11 +689,12 @@ func (s *MemberService) CreateSubscriptionLink(ctx context.Context, req *openpay
 	}
 
 	link := &domain.SubscriptionLink{
-		TenantID: tc.Tenant.ID,
-		MemberID: memberID,
-		PlanID:   planID,
-		Token:    token,
-		Status:   "pending",
+		TenantID:    tc.Tenant.ID,
+		MemberID:    memberID,
+		PlanID:      planID,
+		Token:       token,
+		Status:      "pending",
+		Description: req.Description,
 	}
 	if req.ExpiresInSecs > 0 {
 		t := time.Now().Add(time.Duration(req.ExpiresInSecs) * time.Second)
@@ -864,6 +868,11 @@ func (s *MemberService) GetPaymentLinkInfo(ctx context.Context, req *openpayv1.G
 		return nil, status.Errorf(codes.Internal, "get member: %v", err)
 	}
 
+	tenant, err := s.tenantRepo.GetByID(ctx, link.TenantID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get tenant: %v", err)
+	}
+
 	expiresAt := ""
 	if link.ExpiresAt != nil {
 		expiresAt = link.ExpiresAt.Format(time.RFC3339)
@@ -878,6 +887,8 @@ func (s *MemberService) GetPaymentLinkInfo(ctx context.Context, req *openpayv1.G
 		Status:      string(link.Status),
 		ExpiresAt:   expiresAt,
 		OrderId:     link.OrderID,
+		TenantName:  tenant.Name,
+		LogoUrl:     tenant.LogoURL,
 	}, nil
 }
 
@@ -1039,6 +1050,11 @@ func (s *MemberService) GetSubscriptionLinkInfo(ctx context.Context, req *openpa
 		return nil, status.Errorf(codes.Internal, "get plan: %v", err)
 	}
 
+	tenant, err := s.tenantRepo.GetByID(ctx, link.TenantID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get tenant: %v", err)
+	}
+
 	expiresAt := ""
 	if link.ExpiresAt != nil {
 		expiresAt = link.ExpiresAt.Format(time.RFC3339)
@@ -1054,5 +1070,8 @@ func (s *MemberService) GetSubscriptionLinkInfo(ctx context.Context, req *openpa
 		MemberEmail: member.Email,
 		Status:      link.Status,
 		ExpiresAt:   expiresAt,
+		Description: link.Description,
+		TenantName:  tenant.Name,
+		LogoUrl:     tenant.LogoURL,
 	}, nil
 }

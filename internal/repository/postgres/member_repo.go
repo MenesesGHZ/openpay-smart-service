@@ -419,12 +419,12 @@ func (r *MemberRepo) CreateSubscriptionLink(ctx context.Context, link *domain.Su
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO subscription_links (
 			id, tenant_id, member_id, plan_id, token,
-			status, subscription_id, expires_at, created_at, completed_at
+			status, description, subscription_id, expires_at, created_at, completed_at
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
 		)`,
 		link.ID, link.TenantID, link.MemberID, link.PlanID, link.Token,
-		link.Status, link.SubscriptionID, link.ExpiresAt, link.CreatedAt, link.CompletedAt,
+		link.Status, nilIfEmpty(link.Description), link.SubscriptionID, link.ExpiresAt, link.CreatedAt, link.CompletedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("subscription_link.Create: %w", err)
@@ -435,7 +435,7 @@ func (r *MemberRepo) CreateSubscriptionLink(ctx context.Context, link *domain.Su
 func (r *MemberRepo) GetSubscriptionLinkByToken(ctx context.Context, token string) (*domain.SubscriptionLink, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT id, tenant_id, member_id, plan_id, token,
-			status, subscription_id, expires_at, created_at, completed_at
+			status, description, subscription_id, expires_at, created_at, completed_at
 		FROM subscription_links
 		WHERE token=$1`,
 		token,
@@ -453,7 +453,7 @@ func (r *MemberRepo) GetSubscriptionLinkByToken(ctx context.Context, token strin
 func (r *MemberRepo) GetSubscriptionLinkByID(ctx context.Context, tenantID, linkID uuid.UUID) (*domain.SubscriptionLink, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT id, tenant_id, member_id, plan_id, token,
-			status, subscription_id, expires_at, created_at, completed_at
+			status, description, subscription_id, expires_at, created_at, completed_at
 		FROM subscription_links
 		WHERE id=$1 AND tenant_id=$2`,
 		linkID, tenantID,
@@ -658,12 +658,16 @@ func applyMemberCardNullable(c *domain.MemberCard, cardType, brand, holderName, 
 
 func scanSubscriptionLink(row pgx.Row) (*domain.SubscriptionLink, error) {
 	var l domain.SubscriptionLink
+	var description *string
 	err := row.Scan(
 		&l.ID, &l.TenantID, &l.MemberID, &l.PlanID, &l.Token,
-		&l.Status, &l.SubscriptionID, &l.ExpiresAt, &l.CreatedAt, &l.CompletedAt,
+		&l.Status, &description, &l.SubscriptionID, &l.ExpiresAt, &l.CreatedAt, &l.CompletedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if description != nil {
+		l.Description = *description
 	}
 	return &l, nil
 }

@@ -17,12 +17,12 @@
   --zinc-900: #18181b;
   --zinc-950: #09090b;
 
-  /* Left panel — deep slate (not pitch black) */
-  --panel-bg:         #0f172a;
-  --panel-border:     rgba(255,255,255,.08);
-  --panel-text:       rgba(255,255,255,.93);
-  --panel-muted:      rgba(255,255,255,.42);
-  --panel-subtle:     rgba(255,255,255,.07);
+  /* Left panel — light gray (Stripe-style) */
+  --panel-bg:         #f6f9fc;
+  --panel-border:     #dde3ea;
+  --panel-text:       #30313d;
+  --panel-muted:      #6b7280;
+  --panel-subtle:     rgba(0,0,0,.04);
 
   /* Right panel — near-white */
   --form-bg:          #ffffff;
@@ -55,7 +55,7 @@
   --radius-lg:  12px;
 }
 
-html, body { height: 100%; }
+html, body { height: 100%; overflow: hidden; }
 
 body {
   font-family: var(--font);

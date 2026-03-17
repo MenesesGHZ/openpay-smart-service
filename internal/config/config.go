@@ -20,6 +20,7 @@ type Config struct {
 	Webhook      WebhookConfig      `mapstructure:"webhook"`
 	Telemetry    TelemetryConfig    `mapstructure:"telemetry"`
 	Encryption   EncryptionConfig   `mapstructure:"encryption"`
+	S3           S3Config           `mapstructure:"s3"`
 }
 
 type ServerConfig struct {
@@ -141,6 +142,23 @@ type EncryptionConfig struct {
 	AESKeyHex string `mapstructure:"aes_key_hex"`
 }
 
+// S3Config holds connection details for the object-storage backend used to
+// persist tenant logos. For local development, point Endpoint at LocalStack.
+// In production, leave Endpoint empty to use the real AWS S3 service.
+type S3Config struct {
+	Bucket      string `mapstructure:"bucket"`       // e.g. "openpay-assets"
+	Region      string `mapstructure:"region"`       // e.g. "us-east-1"
+	AccessKeyID string `mapstructure:"access_key_id"`
+	SecretKey   string `mapstructure:"secret_key"`
+	// Endpoint overrides the S3 endpoint; use for LocalStack or MinIO.
+	// Leave empty in production to use real AWS.
+	Endpoint string `mapstructure:"endpoint"` // e.g. "http://localhost:4566"
+	// PublicURL is the base URL used to construct public logo URLs.
+	// For LocalStack: "http://localhost:4566/openpay-assets"
+	// For real S3:    "https://openpay-assets.s3.amazonaws.com"
+	PublicURL string `mapstructure:"public_url"`
+}
+
 // Load reads configuration from the file at cfgPath and then applies any
 // OPENPAY_* environment variable overrides.
 func Load(cfgPath string) (*Config, error) {
@@ -196,6 +214,12 @@ func Load(cfgPath string) (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
+	// S3 / object storage defaults (local development with LocalStack)
+	v.SetDefault("s3.bucket", "openpay-assets")
+	v.SetDefault("s3.region", "us-east-1")
+	v.SetDefault("s3.endpoint", "http://localhost:4566")
+	v.SetDefault("s3.public_url", "http://localhost:4566/openpay-assets")
+
 	// Explicitly bind keys that have no default so AutomaticEnv picks them up.
 	for _, key := range []string{
 		"openpay.merchant_id",
@@ -208,6 +232,12 @@ func Load(cfgPath string) (*Config, error) {
 		"kafka.brokers",
 		"encryption.aes_key_hex",
 		"admin.api_key",
+		"s3.access_key_id",
+		"s3.secret_key",
+		"s3.endpoint",
+		"s3.public_url",
+		"s3.bucket",
+		"s3.region",
 	} {
 		_ = v.BindEnv(key)
 	}

@@ -31,6 +31,7 @@ type SubscriptionLink struct {
 	PlanID         uuid.UUID  `db:"plan_id"`
 	Token          string     `db:"token"`
 	Status         string     `db:"status"`         // "pending" | "completed" | "expired" | "cancelled"
+	Description    string     `db:"description"`    // optional description shown on checkout page
 	SubscriptionID *uuid.UUID `db:"subscription_id"`
 	ExpiresAt      *time.Time `db:"expires_at"`
 	CreatedAt      time.Time  `db:"created_at"`

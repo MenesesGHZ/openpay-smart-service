@@ -16,6 +16,7 @@ import (
 	openpayv1 "github.com/menesesghz/openpay-smart-service/gen/openpay/v1"
 	"github.com/menesesghz/openpay-smart-service/internal/domain"
 	"github.com/menesesghz/openpay-smart-service/internal/repository"
+	"github.com/menesesghz/openpay-smart-service/internal/storage"
 )
 
 // AdminTenantService implements openpayv1.AdminTenantServiceServer.
@@ -24,16 +25,20 @@ type AdminTenantService struct {
 	openpayv1.UnimplementedAdminTenantServiceServer
 
 	tenants repository.TenantRepository
+	storage storage.Storage // may be nil if S3 is not configured
 	log     zerolog.Logger
 }
 
 // NewAdminTenantService constructs an AdminTenantService.
+// store may be nil — when nil, logo upload endpoints return Unimplemented.
 func NewAdminTenantService(
 	tenants repository.TenantRepository,
+	store storage.Storage,
 	log zerolog.Logger,
 ) *AdminTenantService {
 	return &AdminTenantService{
 		tenants: tenants,
+		storage: store,
 		log:     log.With().Str("service", "admin_tenant").Logger(),
 	}
 }
@@ -271,6 +276,7 @@ func domainTenantToProto(t *domain.Tenant) *openpayv1.AdminTenant {
 		Tier:           t.Tier,
 		PlatformFeeBps: int32(t.PlatformFeeBPS),
 		ApiKeyPrefix:   t.APIKeyPrefix,
+		LogoUrl:        t.LogoURL,
 		CreatedAt:      timestamppb.New(t.CreatedAt),
 		UpdatedAt:      timestamppb.New(t.UpdatedAt),
 	}

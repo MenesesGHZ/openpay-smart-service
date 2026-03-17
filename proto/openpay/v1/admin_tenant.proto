@@ -59,6 +59,9 @@ message AdminTenant {
   string api_key_prefix   = 5;
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp updated_at = 7;
+  // logo_url is the public URL of the tenant's logo stored in S3.
+  // Empty string means no logo has been uploaded yet.
+  string logo_url         = 8;
 }
 
 // ─── CreateTenant ─────────────────────────────────────────────────────────────

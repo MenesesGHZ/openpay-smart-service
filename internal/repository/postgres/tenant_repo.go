@@ -35,11 +35,12 @@ func NewTenantRepo(db *pgxpool.Pool, aesKey string) *TenantRepo {
 
 func (r *TenantRepo) Create(ctx context.Context, t *domain.Tenant) error {
 	const q = `
-		INSERT INTO tenants (id, name, api_key_hash, api_key_prefix, tier, platform_fee_bps, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+		INSERT INTO tenants (id, name, api_key_hash, api_key_prefix, tier, platform_fee_bps, logo_url, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 	_, err := r.db.Exec(ctx, q,
 		t.ID, t.Name, t.APIKeyHash, t.APIKeyPrefix, t.Tier, t.PlatformFeeBPS,
+		nilIfEmpty(t.LogoURL),
 		t.CreatedAt, t.UpdatedAt,
 	)
 	if err != nil {
@@ -54,7 +55,7 @@ func (r *TenantRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Tenant,
 	const q = `
 		SELECT id, name, api_key_hash, api_key_prefix, tier, platform_fee_bps,
 		       bank_clabe_enc, bank_clabe_mask, bank_holder_name, bank_name,
-		       created_at, updated_at, deleted_at
+		       logo_url, created_at, updated_at, deleted_at
 		FROM tenants
 		WHERE id = $1 AND deleted_at IS NULL`
 
@@ -68,7 +69,7 @@ func (r *TenantRepo) GetByAPIKeyHash(ctx context.Context, hash string) (*domain.
 	const q = `
 		SELECT id, name, api_key_hash, api_key_prefix, tier, platform_fee_bps,
 		       bank_clabe_enc, bank_clabe_mask, bank_holder_name, bank_name,
-		       created_at, updated_at, deleted_at
+		       logo_url, created_at, updated_at, deleted_at
 		FROM tenants
 		WHERE api_key_hash = $1 AND deleted_at IS NULL`
 
@@ -109,7 +110,7 @@ func (r *TenantRepo) List(ctx context.Context, opts repository.ListTenantsOption
 	const q = `
 		SELECT id, name, api_key_hash, api_key_prefix, tier, platform_fee_bps,
 		       bank_clabe_enc, bank_clabe_mask, bank_holder_name, bank_name,
-		       created_at, updated_at, deleted_at
+		       logo_url, created_at, updated_at, deleted_at
 		FROM tenants
 		WHERE deleted_at IS NULL
 		  AND ($1 = '' OR tier = $1)
@@ -175,6 +176,25 @@ func (r *TenantRepo) RotateAPIKey(ctx context.Context, id uuid.UUID, newHash, ne
 	tag, err := r.db.Exec(ctx, q, newHash, newPrefix, id)
 	if err != nil {
 		return fmt.Errorf("rotate api key: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// ── SetLogoURL ────────────────────────────────────────────────────────────────
+
+// SetLogoURL persists the S3 public URL for a tenant's logo.
+func (r *TenantRepo) SetLogoURL(ctx context.Context, tenantID uuid.UUID, logoURL string) error {
+	const q = `
+		UPDATE tenants
+		SET logo_url = $1, updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL`
+
+	tag, err := r.db.Exec(ctx, q, nilIfEmpty(logoURL), tenantID)
+	if err != nil {
+		return fmt.Errorf("set logo url: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -337,11 +357,12 @@ func (r *TenantRepo) ListDueSchedules(ctx context.Context, before time.Time) ([]
 // scanTenant reads a single tenant row from a pgx.Row (QueryRow result).
 func (r *TenantRepo) scanTenant(row pgx.Row) (*domain.Tenant, error) {
 	var t domain.Tenant
-	var clabeEnc, clabeMask, holderName, bankName *string
+	var clabeEnc, clabeMask, holderName, bankName, logoURL *string
 
 	err := row.Scan(
 		&t.ID, &t.Name, &t.APIKeyHash, &t.APIKeyPrefix, &t.Tier, &t.PlatformFeeBPS,
 		&clabeEnc, &clabeMask, &holderName, &bankName,
+		&logoURL,
 		&t.CreatedAt, &t.UpdatedAt, &t.DeletedAt,
 	)
 	if err != nil {
@@ -351,27 +372,28 @@ func (r *TenantRepo) scanTenant(row pgx.Row) (*domain.Tenant, error) {
 		return nil, fmt.Errorf("scan tenant: %w", err)
 	}
 
-	return r.hydrateTenant(&t, clabeEnc, holderName, bankName)
+	return r.hydrateTenant(&t, clabeEnc, holderName, bankName, logoURL)
 }
 
 // scanTenantRow reads a single tenant row from pgx.Rows (Query result).
 func (r *TenantRepo) scanTenantRow(rows pgx.Rows) (*domain.Tenant, error) {
 	var t domain.Tenant
-	var clabeEnc, clabeMask, holderName, bankName *string
+	var clabeEnc, clabeMask, holderName, bankName, logoURL *string
 
 	if err := rows.Scan(
 		&t.ID, &t.Name, &t.APIKeyHash, &t.APIKeyPrefix, &t.Tier, &t.PlatformFeeBPS,
 		&clabeEnc, &clabeMask, &holderName, &bankName,
+		&logoURL,
 		&t.CreatedAt, &t.UpdatedAt, &t.DeletedAt,
 	); err != nil {
 		return nil, fmt.Errorf("scan tenant row: %w", err)
 	}
 
-	return r.hydrateTenant(&t, clabeEnc, holderName, bankName)
+	return r.hydrateTenant(&t, clabeEnc, holderName, bankName, logoURL)
 }
 
 // hydrateTenant decrypts the CLABE and fills nullable string fields.
-func (r *TenantRepo) hydrateTenant(t *domain.Tenant, clabeEnc, holderName, bankName *string) (*domain.Tenant, error) {
+func (r *TenantRepo) hydrateTenant(t *domain.Tenant, clabeEnc, holderName, bankName, logoURL *string) (*domain.Tenant, error) {
 	if clabeEnc != nil && *clabeEnc != "" {
 		plain, err := encrypt.Decrypt(r.aesKey, *clabeEnc)
 		if err != nil {
@@ -384,6 +406,9 @@ func (r *TenantRepo) hydrateTenant(t *domain.Tenant, clabeEnc, holderName, bankN
 	}
 	if bankName != nil {
 		t.BankName = *bankName
+	}
+	if logoURL != nil {
+		t.LogoURL = *logoURL
 	}
 	return t, nil
 }
