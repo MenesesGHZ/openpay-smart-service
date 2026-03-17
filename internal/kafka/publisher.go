@@ -16,9 +16,6 @@ import (
 
 // Publisher implements webhook.EventPublisher and writes payment and subscription
 // events to their respective Kafka topics in JSON format.
-//
-// Each published message uses the resource ID as the Kafka key (same-partition
-// delivery for the same resource).
 type Publisher struct {
 	paymentWriter      *kafkago.Writer // payment.events topic
 	subscriptionWriter *kafkago.Writer // subscription.events topic
@@ -29,14 +26,32 @@ type Publisher struct {
 // paymentTopic is cfg.Kafka.TopicPaymentEvents (default: "payment.events").
 // subscriptionTopic is cfg.Kafka.TopicSubscriptionEvents (default: "subscription.events").
 func NewPublisher(brokers []string, paymentTopic, subscriptionTopic string, log zerolog.Logger) *Publisher {
+	// Short MetadataTTL ensures stale leader info (from before kafka-init ran)
+	// is discarded quickly. Combined with 1 partition per topic on a single
+	// broker, leader election races become impossible.
+	transport := &kafkago.Transport{
+		MetadataTTL: 2 * time.Second,
+	}
+
 	makeWriter := func(topic string) *kafkago.Writer {
 		return &kafkago.Writer{
-			Addr:         kafkago.TCP(brokers...),
-			Topic:        topic,
-			Balancer:     &kafkago.Hash{},
+			Addr:  kafkago.TCP(brokers...),
+			Topic: topic,
+			// RoundRobin works correctly with any number of partitions and
+			// does not require pre-fetching partition count like Hash does.
+			Balancer:     &kafkago.RoundRobin{},
+			Transport:    transport,
 			BatchTimeout: 10 * time.Millisecond,
-			RequiredAcks: kafkago.RequireAll,
-			Async:        false,
+			// RequireOne is sufficient for a single-broker dev setup.
+			RequiredAcks: kafkago.RequireOne,
+			// WriteMessages calls partitions() before every batch, which
+			// re-fetches metadata via the transport. MaxAttempts > 1 gives
+			// the leader election window a chance to close between retries.
+			MaxAttempts:            5,
+			WriteBackoffMin:        500 * time.Millisecond,
+			WriteBackoffMax:        2 * time.Second,
+			AllowAutoTopicCreation: true,
+			Async:                  false,
 		}
 	}
 

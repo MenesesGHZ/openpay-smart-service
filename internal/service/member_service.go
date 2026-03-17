@@ -967,26 +967,35 @@ func (s *MemberService) RedeemPaymentLink(ctx context.Context, req *openpayv1.Re
 	}
 
 	// Persist the payment record.
+	// ID and IdempotencyKey must be set explicitly — the repo does not
+	// auto-generate them. Using charge.ID as the idempotency key ensures
+	// that a retry of this RPC (e.g. due to a network hiccup) is a no-op
+	// rather than a duplicate insert.
 	linkID := link.ID
+	now := time.Now()
 	payment := &domain.Payment{
+		ID:                   uuid.New(),
 		TenantID:             link.TenantID,
 		MemberID:             link.MemberID,
 		LinkID:               &linkID,
 		OpenpayTransactionID: charge.ID,
+		IdempotencyKey:       "pay-link:" + charge.ID,
 		OrderID:              link.OrderID,
 		GrossAmount:          link.Amount,
 		Currency:             link.Currency,
 		Method:               domain.PaymentMethodCard,
 		Status:               domain.PaymentStatus(charge.Status),
 		Description:          link.Description,
+		CreatedAt:            now,
+		UpdatedAt:            now,
 	}
 	if err := s.paymentRepo.Create(ctx, payment); err != nil {
-		// Non-fatal: charge already created on OpenPay. Log and continue.
+		// Non-fatal: charge already created on OpenPay. Log and continue so
+		// the link is still marked redeemed. The webhook will settle it.
 		s.log.Error().Err(err).Str("charge_id", charge.ID).Msg("failed to persist payment record after charge")
 	}
 
 	// Mark the link as redeemed.
-	now := time.Now()
 	link.Status = domain.PaymentLinkStatusRedeemed
 	link.RedeemedAt = &now
 	if err := s.memberRepo.UpdatePaymentLink(ctx, link); err != nil {
