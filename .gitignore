@@ -2,6 +2,10 @@
 bin/
 *.exe
 
+node_modules/
+.svelte-kit/
+web/checkout/build/
+
 # Generated proto stubs
 gen/
 

@@ -56,6 +56,10 @@ service MemberService {
   rpc RedeemSubscriptionLink (RedeemSubscriptionLinkRequest) returns (RedeemSubscriptionLinkResponse) {
     option (google.api.http) = { post: "/v1/subscription-links/{token}/redeem" body: "*" };
   }
+  // Public — no auth required; used by the hosted checkout page
+  rpc GetSubscriptionLinkInfo (GetSubscriptionLinkInfoRequest) returns (GetSubscriptionLinkInfoResponse) {
+    option (google.api.http) = { get: "/v1/subscription-links/{token}/info" };
+  }
 }
 
 // ─── Domain objects ──────────────────────────────────────────────────────────
@@ -252,4 +256,19 @@ message RedeemSubscriptionLinkRequest {
 message RedeemSubscriptionLinkResponse {
   SubscriptionLink link            = 1;
   string           subscription_id = 2;
+}
+
+message GetSubscriptionLinkInfoRequest {
+  string token = 1;
+}
+message GetSubscriptionLinkInfoResponse {
+  string plan_name    = 1;
+  int64  amount       = 2; // recurring charge in centavos (smallest currency unit)
+  string currency     = 3; // ISO 4217, e.g. "MXN"
+  string repeat_unit  = 4; // "week" | "month" | "year"
+  int32  repeat_every = 5; // e.g. 1
+  string member_name  = 6;
+  string member_email = 7;
+  string status       = 8; // "pending" | "completed" | "expired" | "cancelled"
+  string expires_at   = 9; // RFC 3339 timestamp or "" if no expiry
 }

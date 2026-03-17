@@ -160,19 +160,19 @@
   <!-- Redeem Subscription Link mode -->
   <div id="modeRedeem" style="display:none">
     <label>Subscription Link Token</label>
-    <input id="redeemToken" value="7vAN45Xb10LKtZw7SIXPgNTI" />
+    <input id="redeemToken" value="-N_VwbxiNgWjgKsv0Wl_I15H" />
   </div>
 
   <!-- Card fields -->
   <div class="test-hint">
     <strong>Test card numbers (sandbox):</strong>
-    5243385358972033 — Mastercard (success)<br>
-    4111111111111111 — Visa (success)<br>
-    4000000000000002 — Visa (declined – insufficient funds)
+    4111111111111111 — Visa ✅ always succeeds (use this)<br>
+    5243385358972033 — Mastercard ❌ declined at card storage<br>
+    4000000000000002 — Visa ❌ declined – insufficient funds
   </div>
 
   <label>Card number</label>
-  <input id="cardNumber" value="5243385358972033" maxlength="19" />
+  <input id="cardNumber" value="4111111111111111" maxlength="19" />
 
   <div class="row">
     <div>

@@ -29,6 +29,9 @@ type ServerConfig struct {
 	TLSKeyFile  string `mapstructure:"tls_key_file"`
 	// Maximum time a unary RPC may take.
 	RequestTimeoutSec int `mapstructure:"request_timeout_sec"`
+	// CheckoutBaseURL is the public URL of the hosted checkout service.
+	// Subscription link checkout URLs are built as CheckoutBaseURL + "/s/" + token.
+	CheckoutBaseURL string `mapstructure:"checkout_base_url"`
 }
 
 // OpenPayConfig holds the service-owner's single OpenPay merchant credentials.
@@ -147,6 +150,7 @@ func Load(cfgPath string) (*Config, error) {
 	v.SetDefault("server.grpc_port", 50051)
 	v.SetDefault("server.http_port", 8080)
 	v.SetDefault("server.request_timeout_sec", 30)
+	v.SetDefault("server.checkout_base_url", "http://localhost:3000")
 
 	v.SetDefault("openpay.environment", "sandbox")
 	v.SetDefault("openpay.sandbox_base_url", "https://sandbox-api.openpay.mx/v1")

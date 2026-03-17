@@ -1,0 +1,69 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --font: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Neutral palette — zinc scale */
+  --zinc-50:  #fafafa;
+  --zinc-100: #f4f4f5;
+  --zinc-200: #e4e4e7;
+  --zinc-300: #d4d4d8;
+  --zinc-400: #a1a1aa;
+  --zinc-500: #71717a;
+  --zinc-600: #52525b;
+  --zinc-700: #3f3f46;
+  --zinc-800: #27272a;
+  --zinc-900: #18181b;
+  --zinc-950: #09090b;
+
+  /* Left panel — deep slate (not pitch black) */
+  --panel-bg:         #0f172a;
+  --panel-border:     rgba(255,255,255,.08);
+  --panel-text:       rgba(255,255,255,.93);
+  --panel-muted:      rgba(255,255,255,.42);
+  --panel-subtle:     rgba(255,255,255,.07);
+
+  /* Right panel — near-white */
+  --form-bg:          #ffffff;
+  --form-border:      #e4e4e7;
+
+  /* Inputs */
+  --input-bg:         #ffffff;
+  --input-border:     #e4e4e7;
+  --input-border-focus: #18181b;
+  --input-ring:       rgba(24,24,27,.07);
+  --input-text:       #09090b;
+  --input-placeholder: #a1a1aa;
+
+  /* Brand */
+  --brand:            #00c27a;
+  --brand-dim:        rgba(0,194,122,.12);
+
+  /* Semantic */
+  --error:            #ef4444;
+  --error-bg:         #fef2f2;
+  --error-border:     #fecaca;
+
+  /* Button */
+  --btn-bg:           #09090b;
+  --btn-hover:        #18181b;
+  --btn-text:         #ffffff;
+
+  --radius-sm:  4px;
+  --radius:     8px;
+  --radius-lg:  12px;
+}
+
+html, body { height: 100%; }
+
+body {
+  font-family: var(--font);
+  background: var(--zinc-50);
+  color: var(--zinc-900);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -.01em;
+}

@@ -117,7 +117,7 @@ func main() {
 	)
 	adminTenantSvc := service.NewAdminTenantService(tenantRepo, log.Logger)
 	tenantSvc := service.NewTenantService(tenantRepo, log.Logger)
-	memberSvc := service.NewMemberService(memberRepo, planRepo, subscriptionRepo, opClient, log.Logger)
+	memberSvc := service.NewMemberService(memberRepo, planRepo, subscriptionRepo, opClient, cfg.Server.CheckoutBaseURL, log.Logger)
 	balanceSvc := service.NewBalanceService(balanceRepo, log.Logger)
 	webhookSvc := service.NewWebhookService(webhookRepo, cfg.Encryption.AESKeyHex, log.Logger)
 

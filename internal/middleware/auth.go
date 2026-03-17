@@ -39,6 +39,11 @@ func AuthInterceptor(tenantRepo repository.TenantRepository) grpc.UnaryServerInt
 			return handler(ctx, req)
 		}
 
+		// Public endpoints — no tenant auth required (used by hosted checkout page).
+		if isPublicMethod(info.FullMethod) {
+			return handler(ctx, req)
+		}
+
 		// Admin-authenticated requests (validated by AdminAuthInterceptor) skip
 		// the tenant key lookup — there is no tenant context for admin calls.
 		if isAdminAuthenticated(ctx) {
@@ -104,6 +109,18 @@ func resolveTenant(ctx context.Context, repo repository.TenantRepository, key st
 	h := sha256.Sum256([]byte(key))
 	hash := hex.EncodeToString(h[:])
 	return repo.GetByAPIKeyHash(ctx, hash)
+}
+
+// publicMethods lists gRPC full-method paths that require no authentication.
+// These are intentionally open to the internet (e.g. hosted checkout page).
+var publicMethods = map[string]struct{}{
+	"/openpay.v1.MemberService/GetSubscriptionLinkInfo":  {},
+	"/openpay.v1.MemberService/RedeemSubscriptionLink":   {},
+}
+
+func isPublicMethod(fullMethod string) bool {
+	_, ok := publicMethods[fullMethod]
+	return ok
 }
 
 func maskKey(key string) string {

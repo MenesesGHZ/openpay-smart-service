@@ -29,6 +29,7 @@ type MemberService struct {
 	planRepo         repository.PlanRepository
 	subscriptionRepo repository.SubscriptionRepository
 	opClient         *openpay.Client
+	checkoutBaseURL  string
 	log              zerolog.Logger
 }
 
@@ -37,6 +38,7 @@ func NewMemberService(
 	planRepo repository.PlanRepository,
 	subscriptionRepo repository.SubscriptionRepository,
 	opClient *openpay.Client,
+	checkoutBaseURL string,
 	log zerolog.Logger,
 ) *MemberService {
 	return &MemberService{
@@ -44,6 +46,7 @@ func NewMemberService(
 		planRepo:         planRepo,
 		subscriptionRepo: subscriptionRepo,
 		opClient:         opClient,
+		checkoutBaseURL:  strings.TrimRight(checkoutBaseURL, "/"),
 		log:              log.With().Str("service", "member").Logger(),
 	}
 }
@@ -52,15 +55,15 @@ func NewMemberService(
 
 func memberToProto(m *domain.Member) *openpayv1.Member {
 	p := &openpayv1.Member{
-		Id:               m.ID.String(),
-		TenantId:         m.TenantID.String(),
+		Id:                m.ID.String(),
+		TenantId:          m.TenantID.String(),
 		OpenpayCustomerId: m.OpenpayCustomerID,
-		ExternalId:       m.ExternalID,
-		Name:             m.Name,
-		Email:            m.Email,
-		Phone:            m.Phone,
-		CreatedAt:        timestamppb.New(m.CreatedAt),
-		UpdatedAt:        timestamppb.New(m.UpdatedAt),
+		ExternalId:        m.ExternalID,
+		Name:              m.Name,
+		Email:             m.Email,
+		Phone:             m.Phone,
+		CreatedAt:         timestamppb.New(m.CreatedAt),
+		UpdatedAt:         timestamppb.New(m.UpdatedAt),
 	}
 	switch m.KYCStatus {
 	case domain.KYCStatusVerified:
@@ -133,11 +136,11 @@ func cardToProto(c *domain.MemberCard) *openpayv1.Card {
 
 func subscriptionLinkToProto(l *domain.SubscriptionLink) *openpayv1.SubscriptionLink {
 	p := &openpayv1.SubscriptionLink{
-		Id:       l.ID.String(),
-		MemberId: l.MemberID.String(),
-		PlanId:   l.PlanID.String(),
-		Token:    l.Token,
-		Status:   l.Status,
+		Id:        l.ID.String(),
+		MemberId:  l.MemberID.String(),
+		PlanId:    l.PlanID.String(),
+		Token:     l.Token,
+		Status:    l.Status,
 		CreatedAt: timestamppb.New(l.CreatedAt),
 	}
 	if l.SubscriptionID != nil {
@@ -218,12 +221,12 @@ func (s *MemberService) CreateMember(ctx context.Context, req *openpayv1.CreateM
 		KYCStatus:         domain.KYCStatusPending,
 	}
 	if req.Address != nil {
-		m.AddressLine1      = req.Address.Line1
-		m.AddressLine2      = req.Address.Line2
-		m.AddressCity       = req.Address.City
-		m.AddressState      = req.Address.State
+		m.AddressLine1 = req.Address.Line1
+		m.AddressLine2 = req.Address.Line2
+		m.AddressCity = req.Address.City
+		m.AddressState = req.Address.State
 		m.AddressPostalCode = req.Address.PostalCode
-		m.AddressCountry    = req.Address.Country
+		m.AddressCountry = req.Address.Country
 	}
 
 	if err := s.memberRepo.Create(ctx, m); err != nil {
@@ -302,12 +305,12 @@ func (s *MemberService) UpdateMember(ctx context.Context, req *openpayv1.UpdateM
 		m.Phone = req.Phone
 	}
 	if req.Address != nil {
-		m.AddressLine1      = req.Address.Line1
-		m.AddressLine2      = req.Address.Line2
-		m.AddressCity       = req.Address.City
-		m.AddressState      = req.Address.State
+		m.AddressLine1 = req.Address.Line1
+		m.AddressLine2 = req.Address.Line2
+		m.AddressCity = req.Address.City
+		m.AddressState = req.Address.State
 		m.AddressPostalCode = req.Address.PostalCode
-		m.AddressCountry    = req.Address.Country
+		m.AddressCountry = req.Address.Country
 	}
 
 	if err := s.memberRepo.Update(ctx, m); err != nil {
@@ -408,7 +411,7 @@ func (s *MemberService) CreatePaymentLink(ctx context.Context, req *openpayv1.Cr
 		return nil, status.Error(codes.Internal, "failed to create payment link")
 	}
 
-	checkoutURL := "https://pay.example.com/l/" + token
+	checkoutURL := s.checkoutBaseURL + "/l/" + token
 	return &openpayv1.CreatePaymentLinkResponse{
 		Link:        paymentLinkToProto(link),
 		CheckoutUrl: checkoutURL,
@@ -696,7 +699,7 @@ func (s *MemberService) CreateSubscriptionLink(ctx context.Context, req *openpay
 		return nil, status.Error(codes.Internal, "failed to create subscription link")
 	}
 
-	checkoutURL := "https://pay.example.com/s/" + token
+	checkoutURL := s.checkoutBaseURL + "/s/" + token
 	s.log.Info().Str("member_id", memberID.String()).Str("link_id", link.ID.String()).Msg("subscription link created")
 	return &openpayv1.CreateSubscriptionLinkResponse{
 		Link:        subscriptionLinkToProto(link),
@@ -835,5 +838,48 @@ func (s *MemberService) RedeemSubscriptionLink(ctx context.Context, req *openpay
 	return &openpayv1.RedeemSubscriptionLinkResponse{
 		Link:           subscriptionLinkToProto(link),
 		SubscriptionId: sub.ID.String(),
+	}, nil
+}
+
+// GetSubscriptionLinkInfo is a public endpoint (no tenant auth) used by the
+// hosted checkout page to display plan and member details before payment.
+func (s *MemberService) GetSubscriptionLinkInfo(ctx context.Context, req *openpayv1.GetSubscriptionLinkInfoRequest) (*openpayv1.GetSubscriptionLinkInfoResponse, error) {
+	if req.Token == "" {
+		return nil, status.Error(codes.InvalidArgument, "token is required")
+	}
+
+	link, err := s.memberRepo.GetSubscriptionLinkByToken(ctx, req.Token)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, status.Error(codes.NotFound, "subscription link not found")
+		}
+		return nil, status.Errorf(codes.Internal, "get subscription link: %v", err)
+	}
+
+	member, err := s.memberRepo.GetByID(ctx, link.TenantID, link.MemberID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get member: %v", err)
+	}
+
+	plan, err := s.planRepo.GetByID(ctx, link.TenantID, link.PlanID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get plan: %v", err)
+	}
+
+	expiresAt := ""
+	if link.ExpiresAt != nil {
+		expiresAt = link.ExpiresAt.Format(time.RFC3339)
+	}
+
+	return &openpayv1.GetSubscriptionLinkInfoResponse{
+		PlanName:    plan.Name,
+		Amount:      plan.Amount,
+		Currency:    plan.Currency,
+		RepeatUnit:  plan.RepeatUnit,
+		RepeatEvery: int32(plan.RepeatEvery),
+		MemberName:  member.Name,
+		MemberEmail: member.Email,
+		Status:      link.Status,
+		ExpiresAt:   expiresAt,
 	}, nil
 }
