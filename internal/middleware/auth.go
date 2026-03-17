@@ -114,8 +114,10 @@ func resolveTenant(ctx context.Context, repo repository.TenantRepository, key st
 // publicMethods lists gRPC full-method paths that require no authentication.
 // These are intentionally open to the internet (e.g. hosted checkout page).
 var publicMethods = map[string]struct{}{
-	"/openpay.v1.MemberService/GetSubscriptionLinkInfo":  {},
-	"/openpay.v1.MemberService/RedeemSubscriptionLink":   {},
+	"/openpay.v1.MemberService/GetSubscriptionLinkInfo": {},
+	"/openpay.v1.MemberService/RedeemSubscriptionLink":  {},
+	"/openpay.v1.MemberService/GetPaymentLinkInfo":      {},
+	"/openpay.v1.MemberService/RedeemPaymentLink":       {},
 }
 
 func isPublicMethod(fullMethod string) bool {

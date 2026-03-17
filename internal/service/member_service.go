@@ -28,6 +28,7 @@ type MemberService struct {
 	memberRepo       repository.MemberRepository
 	planRepo         repository.PlanRepository
 	subscriptionRepo repository.SubscriptionRepository
+	paymentRepo      repository.PaymentRepository
 	opClient         *openpay.Client
 	checkoutBaseURL  string
 	log              zerolog.Logger
@@ -37,6 +38,7 @@ func NewMemberService(
 	memberRepo repository.MemberRepository,
 	planRepo repository.PlanRepository,
 	subscriptionRepo repository.SubscriptionRepository,
+	paymentRepo repository.PaymentRepository,
 	opClient *openpay.Client,
 	checkoutBaseURL string,
 	log zerolog.Logger,
@@ -45,6 +47,7 @@ func NewMemberService(
 		memberRepo:       memberRepo,
 		planRepo:         planRepo,
 		subscriptionRepo: subscriptionRepo,
+		paymentRepo:      paymentRepo,
 		opClient:         opClient,
 		checkoutBaseURL:  strings.TrimRight(checkoutBaseURL, "/"),
 		log:              log.With().Str("service", "member").Logger(),
@@ -838,6 +841,167 @@ func (s *MemberService) RedeemSubscriptionLink(ctx context.Context, req *openpay
 	return &openpayv1.RedeemSubscriptionLinkResponse{
 		Link:           subscriptionLinkToProto(link),
 		SubscriptionId: sub.ID.String(),
+	}, nil
+}
+
+// GetPaymentLinkInfo is a public endpoint (no tenant auth) used by the hosted
+// checkout page to display the charge details before the member enters a card.
+func (s *MemberService) GetPaymentLinkInfo(ctx context.Context, req *openpayv1.GetPaymentLinkInfoRequest) (*openpayv1.GetPaymentLinkInfoResponse, error) {
+	if req.Token == "" {
+		return nil, status.Error(codes.InvalidArgument, "token is required")
+	}
+
+	link, err := s.memberRepo.GetPaymentLinkByToken(ctx, req.Token)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, status.Error(codes.NotFound, "payment link not found")
+		}
+		return nil, status.Errorf(codes.Internal, "get payment link: %v", err)
+	}
+
+	member, err := s.memberRepo.GetByID(ctx, link.TenantID, link.MemberID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get member: %v", err)
+	}
+
+	expiresAt := ""
+	if link.ExpiresAt != nil {
+		expiresAt = link.ExpiresAt.Format(time.RFC3339)
+	}
+
+	return &openpayv1.GetPaymentLinkInfoResponse{
+		Description: link.Description,
+		Amount:      link.Amount,
+		Currency:    link.Currency,
+		MemberName:  member.Name,
+		MemberEmail: member.Email,
+		Status:      string(link.Status),
+		ExpiresAt:   expiresAt,
+		OrderId:     link.OrderID,
+	}, nil
+}
+
+// RedeemPaymentLink is a public endpoint (no tenant auth) that tokenizes a card
+// via OpenPay JS SDK, creates a one-time charge, and marks the link as redeemed.
+func (s *MemberService) RedeemPaymentLink(ctx context.Context, req *openpayv1.RedeemPaymentLinkRequest) (*openpayv1.RedeemPaymentLinkResponse, error) {
+	if req.Token == "" {
+		return nil, status.Error(codes.InvalidArgument, "token is required")
+	}
+	if req.TokenId == "" {
+		return nil, status.Error(codes.InvalidArgument, "token_id is required")
+	}
+	if req.DeviceSessionId == "" {
+		return nil, status.Error(codes.InvalidArgument, "device_session_id is required")
+	}
+
+	link, err := s.memberRepo.GetPaymentLinkByToken(ctx, req.Token)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, status.Error(codes.NotFound, "payment link not found")
+		}
+		return nil, status.Errorf(codes.Internal, "get payment link: %v", err)
+	}
+
+	if link.Status != domain.PaymentLinkStatusActive {
+		return nil, status.Errorf(codes.FailedPrecondition, "payment link is already %s", link.Status)
+	}
+	if link.ExpiresAt != nil && time.Now().After(*link.ExpiresAt) {
+		link.Status = domain.PaymentLinkStatusExpired
+		_ = s.memberRepo.UpdatePaymentLink(ctx, link)
+		return nil, status.Error(codes.FailedPrecondition, "payment link has expired")
+	}
+
+	member, err := s.memberRepo.GetByID(ctx, link.TenantID, link.MemberID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get member: %v", err)
+	}
+	if member.OpenpayCustomerID == "" {
+		return nil, status.Error(codes.FailedPrecondition, "member has no OpenPay customer ID")
+	}
+
+	// Register the card token with OpenPay to get a permanent card ID.
+	opCard, err := s.opClient.CreateCard(ctx, member.OpenpayCustomerID, openpay.CreateCardRequest{
+		TokenID:         req.TokenId,
+		DeviceSessionID: req.DeviceSessionId,
+	})
+	if err != nil {
+		s.log.Error().Err(err).Str("link_token", req.Token).Msg("openpay create card failed during payment link redemption")
+		return nil, status.Errorf(codes.Internal, "create card on OpenPay: %v", err)
+	}
+
+	// Persist the card for future use.
+	card := &domain.MemberCard{
+		TenantID:        link.TenantID,
+		MemberID:        link.MemberID,
+		OpenpayCardID:   opCard.ID,
+		CardType:        opCard.Type,
+		Brand:           opCard.Brand,
+		LastFour:        opCard.CardNumber,
+		HolderName:      opCard.HolderName,
+		ExpirationYear:  opCard.ExpirationYear,
+		ExpirationMonth: opCard.ExpirationMonth,
+		BankName:        opCard.BankName,
+		AllowsCharges:   opCard.AllowsCharges,
+	}
+	if err := s.memberRepo.CreateCard(ctx, card); err != nil {
+		s.log.Error().Err(err).Str("link_token", req.Token).Msg("persist card failed during payment link redemption")
+		return nil, status.Error(codes.Internal, "failed to persist card")
+	}
+
+	// Issue the charge on OpenPay using the stored card.
+	amountMajor := float64(link.Amount) / 100.0
+	chargeReq := openpay.CreateCardChargeRequest{
+		Method:          "card",
+		SourceID:        opCard.ID,
+		Amount:          amountMajor,
+		Currency:        link.Currency,
+		Description:     link.Description,
+		OrderID:         link.OrderID,
+		DeviceSessionID: req.DeviceSessionId,
+		Capture:         true,
+	}
+	charge, err := s.opClient.CreateCharge(ctx, member.OpenpayCustomerID, chargeReq)
+	if err != nil {
+		s.log.Error().Err(err).Str("link_token", req.Token).Msg("openpay create charge failed during payment link redemption")
+		return nil, status.Errorf(codes.Internal, "create charge on OpenPay: %v", err)
+	}
+
+	// Persist the payment record.
+	linkID := link.ID
+	payment := &domain.Payment{
+		TenantID:             link.TenantID,
+		MemberID:             link.MemberID,
+		LinkID:               &linkID,
+		OpenpayTransactionID: charge.ID,
+		OrderID:              link.OrderID,
+		GrossAmount:          link.Amount,
+		Currency:             link.Currency,
+		Method:               domain.PaymentMethodCard,
+		Status:               domain.PaymentStatus(charge.Status),
+		Description:          link.Description,
+	}
+	if err := s.paymentRepo.Create(ctx, payment); err != nil {
+		// Non-fatal: charge already created on OpenPay. Log and continue.
+		s.log.Error().Err(err).Str("charge_id", charge.ID).Msg("failed to persist payment record after charge")
+	}
+
+	// Mark the link as redeemed.
+	now := time.Now()
+	link.Status = domain.PaymentLinkStatusRedeemed
+	link.RedeemedAt = &now
+	if err := s.memberRepo.UpdatePaymentLink(ctx, link); err != nil {
+		s.log.Error().Err(err).Str("link_token", req.Token).Msg("failed to mark payment link redeemed")
+	}
+
+	s.log.Info().
+		Str("member_id", link.MemberID.String()).
+		Str("charge_id", charge.ID).
+		Str("link_token", req.Token).
+		Msg("payment link redeemed")
+
+	return &openpayv1.RedeemPaymentLinkResponse{
+		Link:     paymentLinkToProto(link),
+		ChargeId: charge.ID,
 	}, nil
 }
 

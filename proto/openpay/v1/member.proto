@@ -60,6 +60,14 @@ service MemberService {
   rpc GetSubscriptionLinkInfo (GetSubscriptionLinkInfoRequest) returns (GetSubscriptionLinkInfoResponse) {
     option (google.api.http) = { get: "/v1/subscription-links/{token}/info" };
   }
+
+  // Payment link checkout — public endpoints used by the hosted one-time payment page
+  rpc GetPaymentLinkInfo (GetPaymentLinkInfoRequest) returns (GetPaymentLinkInfoResponse) {
+    option (google.api.http) = { get: "/v1/payment-links/{token}/info" };
+  }
+  rpc RedeemPaymentLink (RedeemPaymentLinkRequest) returns (RedeemPaymentLinkResponse) {
+    option (google.api.http) = { post: "/v1/payment-links/{token}/redeem" body: "*" };
+  }
 }
 
 // ─── Domain objects ──────────────────────────────────────────────────────────
@@ -271,4 +279,32 @@ message GetSubscriptionLinkInfoResponse {
   string member_email = 7;
   string status       = 8; // "pending" | "completed" | "expired" | "cancelled"
   string expires_at   = 9; // RFC 3339 timestamp or "" if no expiry
+}
+
+// ─── GetPaymentLinkInfo ───────────────────────────────────────────────────────
+
+message GetPaymentLinkInfoRequest {
+  string token = 1;
+}
+message GetPaymentLinkInfoResponse {
+  string description  = 1;
+  int64  amount       = 2; // charge amount in centavos (smallest currency unit)
+  string currency     = 3; // ISO 4217, e.g. "MXN"
+  string member_name  = 4;
+  string member_email = 5;
+  string status       = 6; // "active" | "redeemed" | "expired" | "cancelled"
+  string expires_at   = 7; // RFC 3339 timestamp or "" if no expiry
+  string order_id     = 8;
+}
+
+// ─── RedeemPaymentLink ────────────────────────────────────────────────────────
+
+message RedeemPaymentLinkRequest {
+  string token             = 1;
+  string token_id          = 2;  // one-time card token from OpenPay JS SDK
+  string device_session_id = 3;
+}
+message RedeemPaymentLinkResponse {
+  PaymentLink link      = 1;
+  string      charge_id = 2; // OpenPay charge transaction ID
 }

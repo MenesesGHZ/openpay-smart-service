@@ -210,6 +210,16 @@ func (h *IngressHandler) handleChargeSucceeded(ctx context.Context, event domain
 
 	log = log.With().Str("openpay_tx_id", charge.ID).Logger()
 
+	// OpenPay sends "charge.succeeded" for BOTH one-time charges and subscription
+	// auto-charges. When a subscription_id is present it is a recurring billing
+	// cycle — delegate to the subscription handler which knows how to create the
+	// payment record on the fly (OpenPay initiated it, so no pre-existing record).
+	if charge.SubscriptionID != "" {
+		log.Debug().Str("openpay_sub_id", charge.SubscriptionID).
+			Msg("charge.succeeded is a subscription charge — delegating to subscription handler")
+		return h.handleSubscriptionChargeSucceeded(ctx, event, log)
+	}
+
 	// Look up our internal payment record.
 	payment, err := h.payments.GetByOpenpayTransactionID(ctx, charge.ID)
 	if err != nil {
@@ -297,6 +307,13 @@ func (h *IngressHandler) handleChargeStatus(
 	}
 
 	log = log.With().Str("openpay_tx_id", charge.ID).Logger()
+
+	// If this is a subscription charge, delegate to the subscription failure handler.
+	if charge.SubscriptionID != "" && status == domain.PaymentStatusFailed {
+		log.Debug().Str("openpay_sub_id", charge.SubscriptionID).
+			Msg("charge.failed is a subscription charge — delegating to subscription handler")
+		return h.handleSubscriptionChargeFailed(ctx, event, log)
+	}
 
 	payment, err := h.payments.GetByOpenpayTransactionID(ctx, charge.ID)
 	if err != nil {

@@ -2,65 +2,30 @@
   "info": {
     "name": "OpenPay Smart Service",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "REST API via grpc-gateway on http://localhost:8080. All requests require the X-API-Key header with a valid tenant API key."
+    "description": "REST API via grpc-gateway on http://localhost:8080. All requests require the Authorization: Bearer header with a valid tenant API key, except endpoints marked (public)."
   },
   "variable": [
-    {
-      "key": "base_url",
-      "value": "http://localhost:8080"
-    },
-    {
-      "key": "api_key",
-      "value": "YOUR_TENANT_API_KEY"
-    },
-    {
-      "key": "member_id",
-      "value": ""
-    },
-    {
-      "key": "payment_id",
-      "value": ""
-    },
-    {
-      "key": "plan_id",
-      "value": ""
-    },
-    {
-      "key": "subscription_id",
-      "value": ""
-    },
-    {
-      "key": "webhook_id",
-      "value": ""
-    },
-    {
-      "key": "link_id",
-      "value": ""
-    },
-    {
-      "key": "delivery_id",
-      "value": ""
-    },
-    {
-      "key": "admin_api_key",
-      "value": "YOUR_ADMIN_API_KEY"
-    }
+    { "key": "base_url",                "value": "http://localhost:8080" },
+    { "key": "checkout_url",            "value": "http://localhost:3000" },
+    { "key": "api_key",                 "value": "YOUR_TENANT_API_KEY" },
+    { "key": "admin_api_key",           "value": "YOUR_ADMIN_API_KEY" },
+    { "key": "member_id",               "value": "" },
+    { "key": "card_id",                 "value": "" },
+    { "key": "payment_id",              "value": "" },
+    { "key": "plan_id",                 "value": "" },
+    { "key": "subscription_id",         "value": "" },
+    { "key": "webhook_id",              "value": "" },
+    { "key": "link_id",                 "value": "" },
+    { "key": "link_token",              "value": "" },
+    { "key": "subscription_link_token", "value": "" },
+    { "key": "delivery_id",             "value": "" }
   ],
   "auth": {
     "type": "apikey",
     "apikey": [
-      {
-        "key": "key",
-        "value": "X-API-Key"
-      },
-      {
-        "key": "value",
-        "value": "{{api_key}}"
-      },
-      {
-        "key": "in",
-        "value": "header"
-      }
+      { "key": "key",   "value": "Authorization" },
+      { "key": "value", "value": "Bearer {{api_key}}" },
+      { "key": "in",    "value": "header" }
     ]
   },
   "item": [
@@ -72,44 +37,23 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{admin_api_key}}"
-              }
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_api_key}}" }
             ],
             "url": "{{base_url}}/v1/admin/tenants",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Acme Corp\",\n  \"tier\": \"standard\",\n  \"platform_fee_bps\": 150\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Acme Corp\",\n  \"tier\": \"standard\",\n  \"platform_fee_bps\": 150\n}" }
           }
         },
         {
           "name": "List Tenants",
           "request": {
             "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{admin_api_key}}"
-              }
-            ],
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_api_key}}" }],
             "url": {
               "raw": "{{base_url}}/v1/admin/tenants?page_size=20",
               "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                },
-                {
-                  "key": "tier",
-                  "value": "",
-                  "disabled": true
-                }
+                { "key": "page_size", "value": "20" },
+                { "key": "tier", "value": "", "disabled": true }
               ]
             }
           }
@@ -118,12 +62,7 @@
           "name": "Get Tenant",
           "request": {
             "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{admin_api_key}}"
-              }
-            ],
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_api_key}}" }],
             "url": "{{base_url}}/v1/admin/tenants/{{tenant_id}}"
           }
         },
@@ -132,32 +71,18 @@
           "request": {
             "method": "PUT",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{admin_api_key}}"
-              }
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_api_key}}" }
             ],
             "url": "{{base_url}}/v1/admin/tenants/{{tenant_id}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Acme Corp Updated\",\n  \"tier\": \"enterprise\",\n  \"platform_fee_bps\": -1\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Acme Corp Updated\",\n  \"tier\": \"enterprise\",\n  \"platform_fee_bps\": -1\n}" }
           }
         },
         {
           "name": "Delete Tenant (soft)",
           "request": {
             "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{admin_api_key}}"
-              }
-            ],
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_api_key}}" }],
             "url": "{{base_url}}/v1/admin/tenants/{{tenant_id}}"
           }
         },
@@ -166,20 +91,11 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{admin_api_key}}"
-              }
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_api_key}}" }
             ],
             "url": "{{base_url}}/v1/admin/tenants/{{tenant_id}}/rotate-key",
-            "body": {
-              "mode": "raw",
-              "raw": "{}"
-            }
+            "body": { "mode": "raw", "raw": "{}" }
           }
         }
       ]
@@ -191,12 +107,7 @@
           "name": "Create Member",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/members",
             "body": {
               "mode": "raw",
@@ -215,17 +126,9 @@
           "name": "Update Member",
           "request": {
             "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/members/{{member_id}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Juan P\u00e9rez Garc\u00eda\",\n  \"email\": \"juan2@example.com\",\n  \"phone\": \"+525512345679\"\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Juan P\u00e9rez Garc\u00eda\",\n  \"email\": \"juan2@example.com\",\n  \"phone\": \"+525512345679\"\n}" }
           }
         },
         {
@@ -235,22 +138,43 @@
             "url": {
               "raw": "{{base_url}}/v1/members?page_size=20",
               "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                },
-                {
-                  "key": "page_token",
-                  "value": "",
-                  "disabled": true
-                },
-                {
-                  "key": "email",
-                  "value": "",
-                  "disabled": true
-                }
+                { "key": "page_size",  "value": "20" },
+                { "key": "page_token", "value": "", "disabled": true },
+                { "key": "email",      "value": "", "disabled": true }
               ]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cards",
+      "item": [
+        {
+          "name": "Register Card",
+          "description": "Registers a card using a one-time token from the OpenPay JS SDK. Never send raw card numbers — only token_id from window.OpenPay.token.create().",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/members/{{member_id}}/cards",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token_id\": \"TOKEN_FROM_OPENPAY_JS_SDK\",\n  \"device_session_id\": \"DEVICE_SESSION_FROM_OPENPAY_JS_SDK\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Cards",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/members/{{member_id}}/cards"
+          }
+        },
+        {
+          "name": "Delete Card",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/members/{{member_id}}/cards/{{card_id}}"
           }
         }
       ]
@@ -262,12 +186,7 @@
           "name": "Create Payment Link",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/members/{{member_id}}/payment-links",
             "body": {
               "mode": "raw",
@@ -283,17 +202,35 @@
           }
         },
         {
+          "name": "Get Payment Link Info (public)",
+          "description": "No auth required. Fetched by the hosted checkout page at {{checkout_url}}/l/{token} before rendering the form.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{base_url}}/v1/payment-links/{{link_token}}/info"
+          }
+        },
+        {
+          "name": "Redeem Payment Link (public)",
+          "description": "No auth required. Registers the card via OpenPay token and fires a one-time charge. Called by the checkout page — use the browser-hosted form instead of calling this directly.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/payment-links/{{link_token}}/redeem",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token_id\": \"TOKEN_FROM_OPENPAY_JS_SDK\",\n  \"device_session_id\": \"DEVICE_SESSION_FROM_OPENPAY_JS_SDK\"\n}"
+            }
+          }
+        },
+        {
           "name": "List Payment Links",
           "request": {
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/v1/members/{{member_id}}/payment-links?page_size=20",
-              "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                }
-              ]
+              "query": [{ "key": "page_size", "value": "20" }]
             }
           }
         },
@@ -301,16 +238,49 @@
           "name": "Expire Payment Link",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/payment-links/{{link_id}}/expire",
+            "body": { "mode": "raw", "raw": "{}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscription Links",
+      "item": [
+        {
+          "name": "Create Subscription Link",
+          "description": "Creates a shareable checkout URL. Copy checkout_url from the response and send it to the member.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/members/{{member_id}}/subscription-links",
             "body": {
               "mode": "raw",
-              "raw": "{}"
+              "raw": "{\n  \"plan_id\": \"{{plan_id}}\",\n  \"expires_in_secs\": 86400\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Subscription Link Info (public)",
+          "description": "No auth required. Fetched by the hosted checkout page at {{checkout_url}}/s/{token} before rendering the form.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{base_url}}/v1/subscription-links/{{subscription_link_token}}/info"
+          }
+        },
+        {
+          "name": "Redeem Subscription Link (public)",
+          "description": "No auth required. Registers the card and creates the subscription. Called by the checkout page — use the browser-hosted form instead of calling this directly.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/v1/subscription-links/{{subscription_link_token}}/redeem",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token_id\": \"TOKEN_FROM_OPENPAY_JS_SDK\",\n  \"device_session_id\": \"DEVICE_SESSION_FROM_OPENPAY_JS_SDK\"\n}"
             }
           }
         }
@@ -333,14 +303,8 @@
             "url": {
               "raw": "{{base_url}}/v1/payments?page_size=20&filter.member_id={{member_id}}",
               "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                },
-                {
-                  "key": "filter.member_id",
-                  "value": "{{member_id}}"
-                }
+                { "key": "page_size",        "value": "20" },
+                { "key": "filter.member_id", "value": "{{member_id}}" }
               ]
             }
           }
@@ -351,12 +315,7 @@
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/v1/tenant/payments?page_size=20",
-              "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                }
-              ]
+              "query": [{ "key": "page_size", "value": "20" }]
             }
           }
         },
@@ -364,17 +323,9 @@
           "name": "Refund Payment",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/payments/{{payment_id}}/refund",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"amount\": 0,\n  \"description\": \"Customer request\"\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": 0,\n  \"description\": \"Customer request\"\n}" }
           }
         }
       ]
@@ -386,12 +337,7 @@
           "name": "Create Plan",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/plans",
             "body": {
               "mode": "raw",
@@ -413,15 +359,8 @@
             "url": {
               "raw": "{{base_url}}/v1/plans?page_size=20",
               "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                },
-                {
-                  "key": "active_only",
-                  "value": "true",
-                  "disabled": true
-                }
+                { "key": "page_size",   "value": "20" },
+                { "key": "active_only", "value": "true", "disabled": true }
               ]
             }
           }
@@ -442,16 +381,11 @@
           "name": "Create Subscription",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/subscriptions",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"member_id\": \"{{member_id}}\",\n  \"plan_id\": \"{{plan_id}}\",\n  \"source_card_id\": \"ktrpvymgatMdAmFjWA7D\",\n  \"trial_end_date\": \"\"\n}"
+              "raw": "{\n  \"member_id\": \"{{member_id}}\",\n  \"plan_id\": \"{{plan_id}}\",\n  \"source_card_id\": \"{{card_id}}\",\n  \"trial_end_date\": \"\"\n}"
             }
           }
         },
@@ -469,20 +403,9 @@
             "url": {
               "raw": "{{base_url}}/v1/subscriptions?page_size=20",
               "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                },
-                {
-                  "key": "filter.member_id",
-                  "value": "{{member_id}}",
-                  "disabled": true
-                },
-                {
-                  "key": "filter.plan_id",
-                  "value": "{{plan_id}}",
-                  "disabled": true
-                }
+                { "key": "page_size",        "value": "20" },
+                { "key": "filter.member_id", "value": "{{member_id}}", "disabled": true },
+                { "key": "filter.plan_id",   "value": "{{plan_id}}",   "disabled": true }
               ]
             }
           }
@@ -491,17 +414,9 @@
           "name": "Cancel Subscription",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/subscriptions/{{subscription_id}}/cancel",
-            "body": {
-              "mode": "raw",
-              "raw": "{}"
-            }
+            "body": { "mode": "raw", "raw": "{}" }
           }
         },
         {
@@ -510,12 +425,7 @@
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/v1/subscriptions/{{subscription_id}}/payments?page_size=20",
-              "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                }
-              ]
+              "query": [{ "key": "page_size", "value": "20" }]
             }
           }
         }
@@ -530,12 +440,7 @@
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/v1/tenant/balance?currency=CURRENCY_MXN",
-              "query": [
-                {
-                  "key": "currency",
-                  "value": "CURRENCY_MXN"
-                }
-              ]
+              "query": [{ "key": "currency", "value": "CURRENCY_MXN" }]
             }
           }
         },
@@ -552,12 +457,7 @@
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/v1/tenant/balances?page_size=20",
-              "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                }
-              ]
+              "query": [{ "key": "page_size", "value": "20" }]
             }
           }
         },
@@ -567,12 +467,7 @@
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/v1/members/{{member_id}}/balance/history?granularity=BALANCE_HISTORY_GRANULARITY_DAY",
-              "query": [
-                {
-                  "key": "granularity",
-                  "value": "BALANCE_HISTORY_GRANULARITY_DAY"
-                }
-              ]
+              "query": [{ "key": "granularity", "value": "BALANCE_HISTORY_GRANULARITY_DAY" }]
             }
           }
         }
@@ -585,72 +480,39 @@
           "name": "Setup Bank Account",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/tenant/bank-account",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"clabe\": \"646180157000000007\",\n  \"holder_name\": \"Mi Empresa SA de CV\",\n  \"bank_name\": \"STP\"\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"clabe\": \"646180157000000007\",\n  \"holder_name\": \"Mi Empresa SA de CV\",\n  \"bank_name\": \"STP\"\n}" }
           }
         },
         {
           "name": "Get Bank Account",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/v1/tenant/bank-account"
-          }
+          "request": { "method": "GET", "url": "{{base_url}}/v1/tenant/bank-account" }
         },
         {
           "name": "Delete Bank Account",
-          "request": {
-            "method": "DELETE",
-            "url": "{{base_url}}/v1/tenant/bank-account"
-          }
+          "request": { "method": "DELETE", "url": "{{base_url}}/v1/tenant/bank-account" }
         },
         {
           "name": "Set Disbursement Frequency",
           "request": {
             "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/tenant/disbursement/schedule",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"frequency\": \"DISBURSEMENT_FREQUENCY_DAILY\",\n  \"cron_expr\": \"\",\n  \"enabled\": true\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"frequency\": \"DISBURSEMENT_FREQUENCY_DAILY\",\n  \"cron_expr\": \"\",\n  \"enabled\": true\n}" }
           }
         },
         {
           "name": "Get Disbursement Schedule",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/v1/tenant/disbursement/schedule"
-          }
+          "request": { "method": "GET", "url": "{{base_url}}/v1/tenant/disbursement/schedule" }
         },
         {
           "name": "Trigger Manual Disbursement",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/tenant/disbursement/trigger",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"description\": \"Manual payout\",\n  \"amount_limit\": 0\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"description\": \"Manual payout\",\n  \"amount_limit\": 0\n}" }
           }
         }
       ]
@@ -662,12 +524,7 @@
           "name": "Register Webhook",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/webhooks",
             "body": {
               "mode": "raw",
@@ -679,25 +536,14 @@
           "name": "Update Webhook",
           "request": {
             "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/webhooks/{{webhook_id}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"url\": \"https://your-app.example.com/webhooks/openpay\",\n  \"events\": [\"charge.succeeded\", \"charge.failed\"],\n  \"enabled\": true\n}"
-            }
+            "body": { "mode": "raw", "raw": "{\n  \"url\": \"https://your-app.example.com/webhooks/openpay\",\n  \"events\": [\"charge.succeeded\", \"charge.failed\"],\n  \"enabled\": true\n}" }
           }
         },
         {
           "name": "Delete Webhook",
-          "request": {
-            "method": "DELETE",
-            "url": "{{base_url}}/v1/webhooks/{{webhook_id}}"
-          }
+          "request": { "method": "DELETE", "url": "{{base_url}}/v1/webhooks/{{webhook_id}}" }
         },
         {
           "name": "List Webhooks",
@@ -705,54 +551,30 @@
             "method": "GET",
             "url": {
               "raw": "{{base_url}}/v1/webhooks?page_size=20",
-              "query": [
-                {
-                  "key": "page_size",
-                  "value": "20"
-                }
-              ]
+              "query": [{ "key": "page_size", "value": "20" }]
             }
           }
         },
         {
           "name": "Get Webhook Delivery",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/v1/webhooks/deliveries/{{delivery_id}}"
-          }
+          "request": { "method": "GET", "url": "{{base_url}}/v1/webhooks/deliveries/{{delivery_id}}" }
         },
         {
           "name": "Retry Webhook Delivery",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/webhooks/deliveries/{{delivery_id}}/retry",
-            "body": {
-              "mode": "raw",
-              "raw": "{}"
-            }
+            "body": { "mode": "raw", "raw": "{}" }
           }
         },
         {
           "name": "Rotate Webhook Secret",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{base_url}}/v1/webhooks/{{webhook_id}}/rotate-secret",
-            "body": {
-              "mode": "raw",
-              "raw": "{}"
-            }
+            "body": { "mode": "raw", "raw": "{}" }
           }
         }
       ]

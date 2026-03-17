@@ -30,6 +30,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
@@ -52,6 +54,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
@@ -118,6 +122,21 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
+
+  # ── Kafka topic initialisation (runs once, creates topics, then exits) ────────
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: [ "bash", "-c" ]
+    command:
+      - |
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic payment.events --partitions 3 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists \
+          --topic subscription.events --partitions 3 --replication-factor 1
+        echo "Kafka topics ready."
 
   # ── Kafka UI (optional dev tool) ─────────────────────────────────────────────
   kafka-ui:

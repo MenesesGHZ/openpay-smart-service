@@ -35,32 +35,36 @@ type PaymentMethodDetails struct {
 }
 
 type Charge struct {
-	ID              string                `json:"id"`
-	CreationDate    string                `json:"creation_date"`
-	OperationDate   string                `json:"operation_date"`
-	TransactionType string                `json:"transaction_type"` // charge
-	Status          string                `json:"status"`           // in_progress | completed | failed | cancelled | refunded | chargeback_pending | chargeback_in_review | chargeback_adjustment | charge_pending
-	Amount          float64               `json:"amount"`
-	Currency        string                `json:"currency"`
-	Description     string                `json:"description"`
-	OrderID         string                `json:"order_id,omitempty"`
-	ErrorMessage    string                `json:"error_message,omitempty"`
-	CustomerID      string                `json:"customer_id,omitempty"`
+	ID              string  `json:"id"`
+	CreationDate    string  `json:"creation_date"`
+	OperationDate   string  `json:"operation_date"`
+	TransactionType string  `json:"transaction_type"` // charge
+	Status          string  `json:"status"`           // in_progress | completed | failed | cancelled | refunded | chargeback_pending | chargeback_in_review | chargeback_adjustment | charge_pending
+	Amount          float64 `json:"amount"`
+	Currency        string  `json:"currency"`
+	Description     string  `json:"description"`
+	OrderID         string  `json:"order_id,omitempty"`
+	ErrorMessage    string  `json:"error_message,omitempty"`
+	CustomerID      string  `json:"customer_id,omitempty"`
 	// SubscriptionID is set on charges created automatically by OpenPay for recurring billing.
 	// It identifies which subscription triggered this charge; present on
 	// subscription.charge.succeeded and subscription.charge.failed events.
-	SubscriptionID  string                `json:"subscription_id,omitempty"`
-	Authorization   string                `json:"authorization,omitempty"`
-	Method          string                `json:"method"` // card | bank_account | store
-	Card            *ChargeCard           `json:"card,omitempty"`
-	PaymentMethod   *PaymentMethodDetails `json:"payment_method,omitempty"`
-	FeeDetails      *FeeDetails           `json:"fee_details,omitempty"`
+	SubscriptionID string                `json:"subscription_id,omitempty"`
+	Authorization  string                `json:"authorization,omitempty"`
+	Method         string                `json:"method"` // card | bank_account | store
+	Card           *ChargeCard           `json:"card,omitempty"`
+	PaymentMethod  *PaymentMethodDetails `json:"payment_method,omitempty"`
+	// OpenPay sends fee details under the key "fee" in webhook events and
+	// charge GET responses.
+	FeeDetails *FeeDetails `json:"fee,omitempty"`
 }
 
 type FeeDetails struct {
-	Amount   float64 `json:"amount"`
-	Tax      float64 `json:"tax"`
-	Currency string  `json:"currency"`
+	Amount         float64  `json:"amount"`
+	Tax            float64  `json:"tax"`
+	Surcharge      *float64 `json:"surcharge,omitempty"`
+	BaseCommission *float64 `json:"base_commission,omitempty"`
+	Currency       string   `json:"currency"`
 }
 
 // CreateChargeRequest — card charge using a stored card ID.
