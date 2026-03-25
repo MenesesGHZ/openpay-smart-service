@@ -250,19 +250,11 @@ func main() {
 	httpMux.Handle("/webhooks/openpay", ingressHandler)
 
 	// Tenant logo upload — POST /v1/admin/tenants/{tenant_id}/logo
-	// Accepts multipart/form-data with a single "logo" file field.
-	// Requires the admin API key: Authorization: Bearer <OPENPAY_ADMIN_API_KEY>
-	httpMux.HandleFunc("/v1/admin/tenants/", func(w http.ResponseWriter, r *http.Request) {
-		// Only handle the /logo sub-path; everything else falls through to gwMux.
-		path := r.URL.Path
-		if r.Method == http.MethodPost && strings.HasSuffix(path, "/logo") {
-			handleLogoUpload(w, r, cfg.Admin.APIKey, tenantRepo, store, log.Logger)
-			return
-		}
-		gwMux.ServeHTTP(w, r)
+	httpMux.HandleFunc("POST /v1/admin/tenants/{tenant_id}/logo", func(w http.ResponseWriter, r *http.Request) {
+		handleLogoUpload(w, r, cfg.Admin.APIKey, tenantRepo, store, log.Logger)
 	})
 
-	// REST gateway — all /v1/ routes are handled by grpc-gateway.
+	// REST gateway — all other /v1/ routes are handled by grpc-gateway.
 	httpMux.Handle("/v1/", gwMux)
 
 	httpSrv := &http.Server{
@@ -443,10 +435,10 @@ func handleLogoUpload(
 
 	// ── Validate content type ─────────────────────────────────────────────────
 	allowed := map[string]string{
-		"image/jpeg": ".jpg",
-		"image/png":  ".png",
-		"image/gif":  ".gif",
-		"image/webp": ".webp",
+		"image/jpeg":    ".jpg",
+		"image/png":     ".png",
+		"image/gif":     ".gif",
+		"image/webp":    ".webp",
 		"image/svg+xml": ".svg",
 	}
 	ct := header.Header.Get("Content-Type")

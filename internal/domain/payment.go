@@ -37,18 +37,26 @@ const (
 //	OpenpayFee   — OpenPay's processing fee as reported in charge.fee_details.
 //	               Card: ~2.9% + $250 centavos; OXXO: $1000 centavos flat; SPEI: $0.
 //	               This is deducted by OpenPay before crediting the merchant balance.
-//	PlatformFee  — Service-owner fee on top: GrossAmount × tenant.PlatformFeeBPS / 10 000.
-//	               Retained by the service owner; NOT forwarded to the tenant.
+//	PlatformFee  — Service-owner fee. Computed by NetAmountForCharge using the tenant's
+//	               PlatformFeeConfig and FeeType. May be negative under FeeTypeInclusive
+//	               when OpenPay's fee exceeds the constant total fee.
 //	NetAmount    — What the tenant earns: GrossAmount − OpenpayFee − PlatformFee.
 //	               This is the amount credited to the tenant's internal balance and
 //	               subsequently sent via SPEI payout to their registered CLABE.
 //
-// Example for a $500.00 MXN card payment:
+// Example — FeeTypeAdded, $500.00 MXN card, 1.5% + $0 fixed:
 //
 //	GrossAmount = 50000  ($500.00 MXN)
 //	OpenpayFee  =  1700  ( $17.00 MXN — 2.9% + $2.50)
-//	PlatformFee =   750  (  $7.50 MXN — 1.5%)
+//	PlatformFee =   750  (  $7.50 MXN — 1.5% added)
 //	NetAmount   = 47550  ($475.50 MXN — credited to tenant balance)
+//
+// Example — FeeTypeInclusive, $500.00 MXN card, constant = $20.00 (0% + 2000 centavos):
+//
+//	GrossAmount = 50000  ($500.00 MXN)
+//	OpenpayFee  =  1700  ( $17.00 MXN)
+//	PlatformFee =   300  (  $3.00 MXN — constant $20.00 − OpenPay $17.00)
+//	NetAmount   = 48000  ($480.00 MXN — gross − constant)
 type Payment struct {
 	ID                   uuid.UUID       `db:"id"`
 	TenantID             uuid.UUID       `db:"tenant_id"`
@@ -63,7 +71,7 @@ type Payment struct {
 	// Set when the charge.succeeded webhook is processed; zero until then.
 	GrossAmount  int64 `db:"gross_amount"`  // total charged to the member
 	OpenpayFee   int64 `db:"openpay_fee"`   // from charge.fee_details (actual, not estimated)
-	PlatformFee  int64 `db:"platform_fee"`  // GrossAmount × tenant.PlatformFeeBPS / 10 000
+	PlatformFee  int64 `db:"platform_fee"`  // computed by NetAmountForCharge; may be negative (FeeTypeInclusive)
 	NetAmount    int64 `db:"net_amount"`    // GrossAmount − OpenpayFee − PlatformFee
 
 	Currency             string          `db:"currency"` // ISO 4217, e.g. "MXN"
@@ -81,13 +89,25 @@ type Payment struct {
 	UpdatedAt            time.Time       `db:"updated_at"`
 }
 
-// NetAmountForCharge computes the net amount the tenant earns from a completed charge.
-// grossCentavos is the charge amount; openpayFeeCentavos comes from charge.fee_details;
-// platformFeeBPS is the tenant's configured basis points (e.g. 150 = 1.5%).
-func NetAmountForCharge(grossCentavos, openpayFeeCentavos int64, platformFeeBPS int) (platformFee, netAmount int64) {
-	platformFee = grossCentavos * int64(platformFeeBPS) / 10_000
-	netAmount = grossCentavos - openpayFeeCentavos - platformFee
-	return platformFee, netAmount
+// NetAmountForCharge computes the fee split for a completed charge.
+//
+//   - FeeTypeAdded:     platform_fee = (gross × bps / 10 000) + fixed
+//                       net          = gross − openpay_fee − platform_fee
+//
+//   - FeeTypeInclusive: constant     = (gross × bps / 10 000) + fixed
+//                       platform_fee = constant − openpay_fee  (can be negative)
+//                       net          = gross − constant
+func NetAmountForCharge(grossCentavos, openpayFeeCentavos int64, fee PlatformFeeConfig, feeType FeeType) (platformFee, netAmount int64) {
+	computed := grossCentavos*int64(fee.PercentageBPS)/10_000 + fee.FixedCentavos
+	switch feeType {
+	case FeeTypeInclusive:
+		platformFee = computed - openpayFeeCentavos
+		netAmount = grossCentavos - computed
+	default: // FeeTypeAdded
+		platformFee = computed
+		netAmount = grossCentavos - openpayFeeCentavos - platformFee
+	}
+	return
 }
 
 // Payout represents a disbursement to the tenant, mapped to an OpenPay payout.

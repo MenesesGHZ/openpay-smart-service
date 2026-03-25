@@ -25,9 +25,8 @@ service AdminTenantService {
     option (google.api.http) = { get: "/v1/admin/tenants" };
   }
 
-  // UpdateTenant changes name, tier, or platform_fee_bps.
-  // Send only the fields you want to change; omitted string fields are ignored
-  // when they are empty, and platform_fee_bps is ignored when it is -1.
+  // UpdateTenant changes name, tier, platform_fee, fee_type, or card network settings.
+  // Omitted / nil fields are left unchanged.
   rpc UpdateTenant (UpdateTenantRequest) returns (UpdateTenantResponse) {
     option (google.api.http) = { put: "/v1/admin/tenants/{tenant_id}" body: "*" };
   }
@@ -45,39 +44,90 @@ service AdminTenantService {
   }
 }
 
+// ─── Fee types ────────────────────────────────────────────────────────────────
+
+// FeeType controls how the platform fee is calculated relative to OpenPay's fee.
+enum FeeType {
+  FEE_TYPE_UNSPECIFIED = 0;
+  // FEE_TYPE_ADDED: platform fee is an additional charge on top of OpenPay's fee.
+  //   platform_fee = (gross × percentage_bps / 10 000) + fixed_centavos
+  //   net          = gross − openpay_fee − platform_fee
+  FEE_TYPE_ADDED = 1;
+  // FEE_TYPE_INCLUSIVE: Fee represents the total constant fee shown to the tenant.
+  // The platform takes what remains after OpenPay's cut (can be negative).
+  //   constant     = (gross × percentage_bps / 10 000) + fixed_centavos
+  //   platform_fee = constant − openpay_fee  (may be negative)
+  //   net          = gross − constant
+  FEE_TYPE_INCLUSIVE = 2;
+}
+
+// Fee defines the platform's fee structure for a charge.
+// At least one of percentage_bps or fixed_centavos must be greater than 0.
+message Fee {
+  // percentage_bps is the percentage of the gross amount in basis points
+  // (e.g. 150 = 1.5%). 0 means no percentage component.
+  int32 percentage_bps  = 1;
+  // fixed_centavos is a flat amount in centavos (e.g. 250 = $2.50 MXN).
+  // 0 means no fixed component.
+  int64 fixed_centavos  = 2;
+}
+
 // ─── Domain object ────────────────────────────────────────────────────────────
 
 // AdminTenant is the tenant representation returned by admin endpoints.
 // The full API key is never returned after the initial CreateTenant call.
 message AdminTenant {
-  string tenant_id        = 1;
-  string name             = 2;
-  string tier             = 3; // "free" | "standard" | "enterprise"
-  int32  platform_fee_bps = 4; // e.g. 150 = 1.5%
+  string tenant_id      = 1;
+  string name           = 2;
+  string tier           = 3; // "free" | "standard" | "enterprise"
+
+  // field 4 reserved (was platform_fee_bps — deprecated in favour of platform_fee + fee_type)
+  reserved 4;
+  reserved "platform_fee_bps";
+
   // api_key_prefix is the first 12 characters of the raw key, for display only.
-  // Use it to help the tenant identify which key is in use.
-  string api_key_prefix   = 5;
+  string api_key_prefix = 5;
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp updated_at = 7;
+
   // logo_url is the public URL of the tenant's logo stored in S3.
-  // Empty string means no logo has been uploaded yet.
-  string logo_url         = 8;
+  string logo_url              = 8;
+  // card_networks_enabled gates the denied card network list.
+  bool   card_networks_enabled = 9;
+  // card_network_list holds the denied card network brands (lower-case),
+  // e.g. ["american_express", "visa"]. Only enforced when card_networks_enabled is true.
+  repeated string card_network_list = 10;
+
+  // platform_fee is the fee structure retained by the platform on each charge.
+  Fee      platform_fee = 11;
+  // fee_type controls how platform_fee is applied relative to OpenPay's fee.
+  FeeType  fee_type     = 12;
 }
 
 // ─── CreateTenant ─────────────────────────────────────────────────────────────
 
 message CreateTenantRequest {
-  string name             = 1; // required
+  string name = 1; // required
   // tier defaults to "standard" if empty.
-  string tier             = 2; // "free" | "standard" | "enterprise"
-  // platform_fee_bps defaults to 150 (1.5%) when 0.
-  int32  platform_fee_bps = 3;
+  string tier = 2; // "free" | "standard" | "enterprise"
+
+  // field 3 reserved (was platform_fee_bps)
+  reserved 3;
+  reserved "platform_fee_bps";
+
+  bool   card_networks_enabled    = 4;
+  repeated string card_network_list = 5;
+
+  // platform_fee defaults to 150 bps + 0 fixed when not provided.
+  // At least one of platform_fee.percentage_bps / platform_fee.fixed_centavos must be > 0.
+  Fee     platform_fee = 6;
+  // fee_type defaults to FEE_TYPE_ADDED when unspecified.
+  FeeType fee_type     = 7;
 }
 
 message CreateTenantResponse {
   AdminTenant tenant  = 1;
   // api_key is the full raw API key — shown ONCE at creation time.
-  // The tenant must store this value securely; it cannot be retrieved again.
   string      api_key = 2;
 }
 
@@ -108,14 +158,27 @@ message ListTenantsResponse {
 // ─── UpdateTenant ─────────────────────────────────────────────────────────────
 
 message UpdateTenantRequest {
-  string tenant_id        = 1;
+  string tenant_id = 1;
   // name: new display name; ignored if empty.
-  string name             = 2;
+  string name      = 2;
   // tier: new tier; ignored if empty.
-  string tier             = 3;
-  // platform_fee_bps: new fee in basis points; ignored if -1.
-  // Set to 0 to explicitly charge no platform fee.
-  int32  platform_fee_bps = 4;
+  string tier      = 3;
+
+  // field 4 reserved (was platform_fee_bps)
+  reserved 4;
+  reserved "platform_fee_bps";
+
+  // card_networks_enabled: nil means leave unchanged.
+  optional bool   card_networks_enabled = 5;
+  // card_network_list: replaces the full list when provided (non-nil).
+  // Send an empty list to clear all denied networks.
+  repeated string card_network_list     = 6;
+
+  // platform_fee: nil means leave unchanged. When provided, at least one
+  // component must be > 0.
+  Fee             platform_fee          = 7;
+  // fee_type: FEE_TYPE_UNSPECIFIED means leave unchanged.
+  FeeType         fee_type              = 8;
 }
 
 message UpdateTenantResponse {

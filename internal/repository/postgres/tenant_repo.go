@@ -35,12 +35,17 @@ func NewTenantRepo(db *pgxpool.Pool, aesKey string) *TenantRepo {
 
 func (r *TenantRepo) Create(ctx context.Context, t *domain.Tenant) error {
 	const q = `
-		INSERT INTO tenants (id, name, api_key_hash, api_key_prefix, tier, platform_fee_bps, logo_url, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+		INSERT INTO tenants (id, name, api_key_hash, api_key_prefix, tier,
+		                     platform_fee_percentage_bps, platform_fee_fixed_centavos, fee_type,
+		                     logo_url, card_networks_enabled, card_network_list,
+		                     created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 
 	_, err := r.db.Exec(ctx, q,
-		t.ID, t.Name, t.APIKeyHash, t.APIKeyPrefix, t.Tier, t.PlatformFeeBPS,
+		t.ID, t.Name, t.APIKeyHash, t.APIKeyPrefix, t.Tier,
+		t.PlatformFee.PercentageBPS, t.PlatformFee.FixedCentavos, string(t.FeeType),
 		nilIfEmpty(t.LogoURL),
+		t.CardNetworksEnabled, t.CardNetworkList,
 		t.CreatedAt, t.UpdatedAt,
 	)
 	if err != nil {
@@ -53,9 +58,10 @@ func (r *TenantRepo) Create(ctx context.Context, t *domain.Tenant) error {
 
 func (r *TenantRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Tenant, error) {
 	const q = `
-		SELECT id, name, api_key_hash, api_key_prefix, tier, platform_fee_bps,
+		SELECT id, name, api_key_hash, api_key_prefix, tier,
+		       platform_fee_percentage_bps, platform_fee_fixed_centavos, fee_type,
 		       bank_clabe_enc, bank_clabe_mask, bank_holder_name, bank_name,
-		       logo_url, created_at, updated_at, deleted_at
+		       logo_url, card_networks_enabled, card_network_list, created_at, updated_at, deleted_at
 		FROM tenants
 		WHERE id = $1 AND deleted_at IS NULL`
 
@@ -67,9 +73,10 @@ func (r *TenantRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Tenant,
 
 func (r *TenantRepo) GetByAPIKeyHash(ctx context.Context, hash string) (*domain.Tenant, error) {
 	const q = `
-		SELECT id, name, api_key_hash, api_key_prefix, tier, platform_fee_bps,
+		SELECT id, name, api_key_hash, api_key_prefix, tier,
+		       platform_fee_percentage_bps, platform_fee_fixed_centavos, fee_type,
 		       bank_clabe_enc, bank_clabe_mask, bank_holder_name, bank_name,
-		       logo_url, created_at, updated_at, deleted_at
+		       logo_url, card_networks_enabled, card_network_list, created_at, updated_at, deleted_at
 		FROM tenants
 		WHERE api_key_hash = $1 AND deleted_at IS NULL`
 
@@ -82,10 +89,17 @@ func (r *TenantRepo) GetByAPIKeyHash(ctx context.Context, hash string) (*domain.
 func (r *TenantRepo) Update(ctx context.Context, t *domain.Tenant) error {
 	const q = `
 		UPDATE tenants
-		SET name = $1, tier = $2, platform_fee_bps = $3, updated_at = NOW()
-		WHERE id = $4 AND deleted_at IS NULL`
+		SET name = $1, tier = $2,
+		    platform_fee_percentage_bps = $3, platform_fee_fixed_centavos = $4, fee_type = $5,
+		    card_networks_enabled = $6, card_network_list = $7,
+		    updated_at = NOW()
+		WHERE id = $8 AND deleted_at IS NULL`
 
-	tag, err := r.db.Exec(ctx, q, t.Name, t.Tier, t.PlatformFeeBPS, t.ID)
+	tag, err := r.db.Exec(ctx, q,
+		t.Name, t.Tier,
+		t.PlatformFee.PercentageBPS, t.PlatformFee.FixedCentavos, string(t.FeeType),
+		t.CardNetworksEnabled, t.CardNetworkList,
+		t.ID)
 	if err != nil {
 		return fmt.Errorf("tenant update: %w", err)
 	}
@@ -108,9 +122,10 @@ func (r *TenantRepo) List(ctx context.Context, opts repository.ListTenantsOption
 	offset := decodePageToken(opts.PageToken)
 
 	const q = `
-		SELECT id, name, api_key_hash, api_key_prefix, tier, platform_fee_bps,
+		SELECT id, name, api_key_hash, api_key_prefix, tier,
+		       platform_fee_percentage_bps, platform_fee_fixed_centavos, fee_type,
 		       bank_clabe_enc, bank_clabe_mask, bank_holder_name, bank_name,
-		       logo_url, created_at, updated_at, deleted_at
+		       logo_url, card_networks_enabled, card_network_list, created_at, updated_at, deleted_at
 		FROM tenants
 		WHERE deleted_at IS NULL
 		  AND ($1 = '' OR tier = $1)
@@ -358,11 +373,13 @@ func (r *TenantRepo) ListDueSchedules(ctx context.Context, before time.Time) ([]
 func (r *TenantRepo) scanTenant(row pgx.Row) (*domain.Tenant, error) {
 	var t domain.Tenant
 	var clabeEnc, clabeMask, holderName, bankName, logoURL *string
+	var feeType string
 
 	err := row.Scan(
-		&t.ID, &t.Name, &t.APIKeyHash, &t.APIKeyPrefix, &t.Tier, &t.PlatformFeeBPS,
+		&t.ID, &t.Name, &t.APIKeyHash, &t.APIKeyPrefix, &t.Tier,
+		&t.PlatformFee.PercentageBPS, &t.PlatformFee.FixedCentavos, &feeType,
 		&clabeEnc, &clabeMask, &holderName, &bankName,
-		&logoURL,
+		&logoURL, &t.CardNetworksEnabled, &t.CardNetworkList,
 		&t.CreatedAt, &t.UpdatedAt, &t.DeletedAt,
 	)
 	if err != nil {
@@ -372,6 +389,7 @@ func (r *TenantRepo) scanTenant(row pgx.Row) (*domain.Tenant, error) {
 		return nil, fmt.Errorf("scan tenant: %w", err)
 	}
 
+	t.FeeType = domain.FeeType(feeType)
 	return r.hydrateTenant(&t, clabeEnc, holderName, bankName, logoURL)
 }
 
@@ -379,16 +397,19 @@ func (r *TenantRepo) scanTenant(row pgx.Row) (*domain.Tenant, error) {
 func (r *TenantRepo) scanTenantRow(rows pgx.Rows) (*domain.Tenant, error) {
 	var t domain.Tenant
 	var clabeEnc, clabeMask, holderName, bankName, logoURL *string
+	var feeType string
 
 	if err := rows.Scan(
-		&t.ID, &t.Name, &t.APIKeyHash, &t.APIKeyPrefix, &t.Tier, &t.PlatformFeeBPS,
+		&t.ID, &t.Name, &t.APIKeyHash, &t.APIKeyPrefix, &t.Tier,
+		&t.PlatformFee.PercentageBPS, &t.PlatformFee.FixedCentavos, &feeType,
 		&clabeEnc, &clabeMask, &holderName, &bankName,
-		&logoURL,
+		&logoURL, &t.CardNetworksEnabled, &t.CardNetworkList,
 		&t.CreatedAt, &t.UpdatedAt, &t.DeletedAt,
 	); err != nil {
 		return nil, fmt.Errorf("scan tenant row: %w", err)
 	}
 
+	t.FeeType = domain.FeeType(feeType)
 	return r.hydrateTenant(&t, clabeEnc, holderName, bankName, logoURL)
 }
 

@@ -226,7 +226,7 @@ func (h *IngressHandler) handleChargeSucceeded(ctx context.Context, event domain
 		return fmt.Errorf("get payment by openpay tx %s: %w", charge.ID, err)
 	}
 
-	// Fetch tenant to get PlatformFeeBPS.
+	// Fetch tenant for fee config.
 	tenant, err := h.tenants.GetByID(ctx, payment.TenantID)
 	if err != nil {
 		return fmt.Errorf("get tenant %s: %w", payment.TenantID, err)
@@ -241,7 +241,7 @@ func (h *IngressHandler) handleChargeSucceeded(ctx context.Context, event domain
 		openpayFeeCentavos = floatToCentavos(charge.FeeDetails.Amount)
 	}
 
-	platformFee, netAmount := domain.NetAmountForCharge(grossCentavos, openpayFeeCentavos, tenant.PlatformFeeBPS)
+	platformFee, netAmount := domain.NetAmountForCharge(grossCentavos, openpayFeeCentavos, tenant.PlatformFee, tenant.FeeType)
 
 	fees := repository.PaymentFees{
 		GrossAmount: grossCentavos,
@@ -398,7 +398,7 @@ func (h *IngressHandler) handleSubscriptionChargeSucceeded(ctx context.Context, 
 		return fmt.Errorf("get subscription by openpay id %s: %w", charge.SubscriptionID, err)
 	}
 
-	// Fetch tenant for PlatformFeeBPS.
+	// Fetch tenant for fee config.
 	tenant, err := h.tenants.GetByID(ctx, sub.TenantID)
 	if err != nil {
 		return fmt.Errorf("get tenant %s: %w", sub.TenantID, err)
@@ -441,7 +441,7 @@ func (h *IngressHandler) handleSubscriptionChargeSucceeded(ctx context.Context, 
 	if charge.FeeDetails != nil {
 		openpayFeeCentavos = floatToCentavos(charge.FeeDetails.Amount)
 	}
-	platformFee, netAmount := domain.NetAmountForCharge(grossCentavos, openpayFeeCentavos, tenant.PlatformFeeBPS)
+	platformFee, netAmount := domain.NetAmountForCharge(grossCentavos, openpayFeeCentavos, tenant.PlatformFee, tenant.FeeType)
 
 	fees := repository.PaymentFees{
 		GrossAmount: grossCentavos,

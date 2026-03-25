@@ -6,6 +6,38 @@ import (
 	"github.com/google/uuid"
 )
 
+// FeeType determines how the platform fee is applied relative to OpenPay's fee.
+type FeeType string
+
+const (
+	// FeeTypeAdded means the computed platform fee is added on top of OpenPay's
+	// fee. The tenant absorbs both.
+	//   platform_fee = (gross × percentage_bps / 10 000) + fixed_centavos
+	//   net          = gross − openpay_fee − platform_fee
+	FeeTypeAdded FeeType = "added"
+
+	// FeeTypeInclusive means the Fee represents the total constant fee shown to
+	// the tenant (OpenPay + platform combined). The platform takes whatever is
+	// left after OpenPay's cut — which can be negative when OpenPay's fee exceeds
+	// the constant.
+	//   constant     = (gross × percentage_bps / 10 000) + fixed_centavos
+	//   platform_fee = constant − openpay_fee  (may be negative)
+	//   net          = gross − constant
+	FeeTypeInclusive FeeType = "inclusive"
+)
+
+// PlatformFeeConfig defines the fee the platform retains per charge.
+// At least one of PercentageBPS or FixedCentavos must be greater than 0.
+type PlatformFeeConfig struct {
+	// PercentageBPS is the percentage of the gross amount in basis points
+	// (e.g. 150 = 1.5%). 0 means no percentage component.
+	PercentageBPS int `db:"platform_fee_percentage_bps"`
+
+	// FixedCentavos is a flat amount in centavos (e.g. 250 = $2.50 MXN).
+	// 0 means no fixed component.
+	FixedCentavos int64 `db:"platform_fee_fixed_centavos"`
+}
+
 // Tenant represents a platform operator (your customer) who uses this service
 // to collect payments from their own end-users (Members).
 //
@@ -30,15 +62,23 @@ type Tenant struct {
 	BankHolderName string `db:"bank_holder_name"` // account holder full name
 	BankName       string `db:"bank_name"`        // e.g. "BBVA", "BANAMEX", "SANTANDER"
 
-	// PlatformFeeBPS is the service-owner's fee applied on top of the OpenPay fee,
-	// expressed as basis points (1 BPS = 0.01%).  150 BPS = 1.5%.
-	// Applied at charge.succeeded time: platform_fee = gross_amount × PlatformFeeBPS / 10 000.
-	// Defaults to the service-wide default (e.g. 150) if not explicitly set per tenant.
-	PlatformFeeBPS int `db:"platform_fee_bps"`
+	// PlatformFee is the fee structure the platform retains from each charge.
+	PlatformFee PlatformFeeConfig `db:"platform_fee"`
+
+	// FeeType controls how PlatformFee is interpreted relative to OpenPay's fee.
+	FeeType FeeType `db:"fee_type"`
 
 	// LogoURL is the publicly accessible URL of the tenant's logo stored in S3.
 	// Empty string means no logo has been uploaded yet.
 	LogoURL string `db:"logo_url"`
+
+	// CardNetworksEnabled gates the card network deny-list. When false, all
+	// card brands are accepted regardless of CardNetworkList.
+	CardNetworksEnabled bool `db:"card_networks_enabled"`
+
+	// CardNetworkList holds the denied card network brands (lower-case), e.g.
+	// ["american_express", "visa"]. Only enforced when CardNetworksEnabled is true.
+	CardNetworkList []string `db:"card_network_list"`
 
 	CreatedAt time.Time  `db:"created_at"`
 	UpdatedAt time.Time  `db:"updated_at"`

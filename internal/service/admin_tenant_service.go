@@ -43,6 +43,59 @@ func NewAdminTenantService(
 	}
 }
 
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+// feeTypeFromProto converts a proto FeeType to the domain type.
+// FEE_TYPE_UNSPECIFIED and FEE_TYPE_ADDED both resolve to FeeTypeAdded.
+func feeTypeFromProto(ft openpayv1.FeeType) domain.FeeType {
+	if ft == openpayv1.FeeType_FEE_TYPE_INCLUSIVE {
+		return domain.FeeTypeInclusive
+	}
+	return domain.FeeTypeAdded
+}
+
+// feeTypeToProto converts the domain FeeType to proto.
+func feeTypeToProto(ft domain.FeeType) openpayv1.FeeType {
+	if ft == domain.FeeTypeInclusive {
+		return openpayv1.FeeType_FEE_TYPE_INCLUSIVE
+	}
+	return openpayv1.FeeType_FEE_TYPE_ADDED
+}
+
+// validateFee returns an error when neither fee component is greater than 0.
+func validateFee(f domain.PlatformFeeConfig) error {
+	if f.PercentageBPS == 0 && f.FixedCentavos == 0 {
+		return status.Error(codes.InvalidArgument, "platform_fee: at least one of percentage_bps or fixed_centavos must be > 0")
+	}
+	if f.PercentageBPS < 0 {
+		return status.Error(codes.InvalidArgument, "platform_fee.percentage_bps must be >= 0")
+	}
+	if f.FixedCentavos < 0 {
+		return status.Error(codes.InvalidArgument, "platform_fee.fixed_centavos must be >= 0")
+	}
+	return nil
+}
+
+// feeFromProto converts a proto Fee message to the domain struct.
+// Returns the default fee (150 BPS, 0 fixed) when msg is nil.
+func feeFromProto(msg *openpayv1.Fee) domain.PlatformFeeConfig {
+	if msg == nil {
+		return domain.PlatformFeeConfig{PercentageBPS: 150} // default 1.5%
+	}
+	return domain.PlatformFeeConfig{
+		PercentageBPS: int(msg.PercentageBps),
+		FixedCentavos: msg.FixedCentavos,
+	}
+}
+
+// feeToProto converts the domain PlatformFeeConfig to a proto Fee message.
+func feeToProto(f domain.PlatformFeeConfig) *openpayv1.Fee {
+	return &openpayv1.Fee{
+		PercentageBps: int32(f.PercentageBPS),
+		FixedCentavos: f.FixedCentavos,
+	}
+}
+
 // ── CreateTenant ──────────────────────────────────────────────────────────────
 
 // CreateTenant provisions a new tenant and returns the raw API key once.
@@ -59,13 +112,11 @@ func (s *AdminTenantService) CreateTenant(ctx context.Context, req *openpayv1.Cr
 		return nil, status.Error(codes.InvalidArgument, "tier must be 'free', 'standard', or 'enterprise'")
 	}
 
-	feeBPS := int(req.PlatformFeeBps)
-	if feeBPS == 0 {
-		feeBPS = 150 // default 1.5%
+	platformFee := feeFromProto(req.PlatformFee)
+	if err := validateFee(platformFee); err != nil {
+		return nil, err
 	}
-	if feeBPS < 0 {
-		return nil, status.Error(codes.InvalidArgument, "platform_fee_bps must be >= 0")
-	}
+	feeType := feeTypeFromProto(req.FeeType)
 
 	rawKey, keyHash, keyPrefix, err := generateAPIKey()
 	if err != nil {
@@ -75,14 +126,17 @@ func (s *AdminTenantService) CreateTenant(ctx context.Context, req *openpayv1.Cr
 
 	now := time.Now().UTC()
 	t := &domain.Tenant{
-		ID:             uuid.New(),
-		Name:           req.Name,
-		APIKeyHash:     keyHash,
-		APIKeyPrefix:   keyPrefix,
-		Tier:           tier,
-		PlatformFeeBPS: feeBPS,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                  uuid.New(),
+		Name:                req.Name,
+		APIKeyHash:          keyHash,
+		APIKeyPrefix:        keyPrefix,
+		Tier:                tier,
+		PlatformFee:         platformFee,
+		FeeType:             feeType,
+		CardNetworksEnabled: req.CardNetworksEnabled,
+		CardNetworkList:     req.CardNetworkList,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	if err := s.tenants.Create(ctx, t); err != nil {
@@ -174,11 +228,21 @@ func (s *AdminTenantService) UpdateTenant(ctx context.Context, req *openpayv1.Up
 		}
 		t.Tier = req.Tier
 	}
-	if req.PlatformFeeBps != -1 {
-		if req.PlatformFeeBps < 0 {
-			return nil, status.Error(codes.InvalidArgument, "platform_fee_bps must be >= 0 (or -1 to leave unchanged)")
+	if req.PlatformFee != nil {
+		newFee := feeFromProto(req.PlatformFee)
+		if err := validateFee(newFee); err != nil {
+			return nil, err
 		}
-		t.PlatformFeeBPS = int(req.PlatformFeeBps)
+		t.PlatformFee = newFee
+	}
+	if req.FeeType != openpayv1.FeeType_FEE_TYPE_UNSPECIFIED {
+		t.FeeType = feeTypeFromProto(req.FeeType)
+	}
+	if req.CardNetworksEnabled != nil {
+		t.CardNetworksEnabled = req.GetCardNetworksEnabled()
+	}
+	if req.CardNetworkList != nil {
+		t.CardNetworkList = req.CardNetworkList
 	}
 
 	if err := s.tenants.Update(ctx, t); err != nil {
@@ -271,13 +335,16 @@ func generateAPIKey() (raw, hash, prefix string, err error) {
 // domainTenantToProto converts a domain.Tenant to the AdminTenant proto message.
 func domainTenantToProto(t *domain.Tenant) *openpayv1.AdminTenant {
 	return &openpayv1.AdminTenant{
-		TenantId:       t.ID.String(),
-		Name:           t.Name,
-		Tier:           t.Tier,
-		PlatformFeeBps: int32(t.PlatformFeeBPS),
-		ApiKeyPrefix:   t.APIKeyPrefix,
-		LogoUrl:        t.LogoURL,
-		CreatedAt:      timestamppb.New(t.CreatedAt),
-		UpdatedAt:      timestamppb.New(t.UpdatedAt),
+		TenantId:            t.ID.String(),
+		Name:                t.Name,
+		Tier:                t.Tier,
+		ApiKeyPrefix:        t.APIKeyPrefix,
+		LogoUrl:             t.LogoURL,
+		PlatformFee:         feeToProto(t.PlatformFee),
+		FeeType:             feeTypeToProto(t.FeeType),
+		CardNetworksEnabled: t.CardNetworksEnabled,
+		CardNetworkList:     t.CardNetworkList,
+		CreatedAt:           timestamppb.New(t.CreatedAt),
+		UpdatedAt:           timestamppb.New(t.UpdatedAt),
 	}
 }

@@ -57,6 +57,24 @@ func NewMemberService(
 	}
 }
 
+// ── card network validation ───────────────────────────────────────────────────
+
+// checkCardNetwork returns an error when the tenant has card network filtering
+// enabled and the given card brand appears in the denied list.
+// Brand comparison is case-insensitive.
+func checkCardNetwork(tenant *domain.Tenant, brand string) error {
+	if !tenant.CardNetworksEnabled || len(tenant.CardNetworkList) == 0 {
+		return nil
+	}
+	b := strings.ToLower(brand)
+	for _, denied := range tenant.CardNetworkList {
+		if strings.ToLower(denied) == b {
+			return status.Errorf(codes.PermissionDenied, "card network %q is not accepted", brand)
+		}
+	}
+	return nil
+}
+
 // ── converters ────────────────────────────────────────────────────────────────
 
 func memberToProto(m *domain.Member) *openpayv1.Member {
@@ -776,6 +794,15 @@ func (s *MemberService) RedeemSubscriptionLink(ctx context.Context, req *openpay
 		return nil, status.Errorf(codes.Internal, "create card on OpenPay: %v", err)
 	}
 
+	// Validate card network against tenant deny-list before persisting anything.
+	tenant, err := s.tenantRepo.GetByID(ctx, link.TenantID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to fetch tenant")
+	}
+	if err := checkCardNetwork(tenant, opCard.Brand); err != nil {
+		return nil, err
+	}
+
 	// Persist card metadata.
 	card := &domain.MemberCard{
 		TenantID:        link.TenantID,
@@ -938,6 +965,15 @@ func (s *MemberService) RedeemPaymentLink(ctx context.Context, req *openpayv1.Re
 	if err != nil {
 		s.log.Error().Err(err).Str("link_token", req.Token).Msg("openpay create card failed during payment link redemption")
 		return nil, status.Errorf(codes.Internal, "create card on OpenPay: %v", err)
+	}
+
+	// Validate card network against tenant deny-list before persisting anything.
+	tenant, err := s.tenantRepo.GetByID(ctx, link.TenantID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to fetch tenant")
+	}
+	if err := checkCardNetwork(tenant, opCard.Brand); err != nil {
+		return nil, err
 	}
 
 	// Persist the card for future use.
